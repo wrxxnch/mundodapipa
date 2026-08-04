@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { X, Plus, Save, Image as ImageIcon, Tag, DollarSign, PackageCheck, Trash2, Upload, Camera, Link as LinkIcon, CheckCircle2 } from 'lucide-react';
 import { Product, Category } from '../types';
 import { addProductToFirestore, updateProductInFirestore, deleteProductFromFirestore } from '../lib/firebase';
+import { compressImageFile } from '../utils/imageCompressor';
 
 interface AdminProductModalProps {
   isOpen: boolean;
@@ -64,17 +65,21 @@ export const AdminProductModal: React.FC<AdminProductModalProps> = ({
 
   if (!isOpen) return null;
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
       setFileName(file.name);
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        if (typeof reader.result === 'string') {
-          setImage(reader.result);
-        }
-      };
-      reader.readAsDataURL(file);
+      setLoading(true);
+      setError(null);
+      try {
+        const compressedBase64 = await compressImageFile(file, 800, 800, 0.75);
+        setImage(compressedBase64);
+      } catch (err: any) {
+        console.error('Error compressing image:', err);
+        setError('Erro ao processar imagem do dispositivo: ' + (err.message || 'Tente outra imagem'));
+      } finally {
+        setLoading(false);
+      }
     }
   };
 
@@ -339,8 +344,11 @@ export const AdminProductModal: React.FC<AdminProductModalProps> = ({
                   referrerPolicy="no-referrer"
                 />
                 <div className="flex-1 min-w-0">
-                  <p className="text-xs font-bold text-slate-900 truncate">Foto Carregada com Sucesso</p>
-                  <p className="text-[11px] text-slate-400">Pronta para exibição no catálogo</p>
+                  <p className="text-xs font-bold text-slate-900 truncate">Foto Otimizada com Sucesso</p>
+                  <p className="text-[11px] text-emerald-600 font-extrabold flex items-center gap-1">
+                    <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                    <span>Salva no Cloud Firestore (Visível para todos os perfis)</span>
+                  </p>
                 </div>
                 <button
                   type="button"
