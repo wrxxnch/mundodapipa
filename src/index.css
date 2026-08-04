@@ -1,0 +1,54 @@
+@import "tailwindcss";
+
+@layer utilities {
+  .kite-bg {
+    background: linear-gradient(135deg, #0ea5e9 0%, #38bdf8 100%);
+    position: relative;
+    overflow: hidden;
+  }
+  .kite-bg::before {
+    content: '';
+    position: absolute;
+    top: -50px;
+    right: -50px;
+    width: 250px;
+    height: 250px;
+    background: rgba(255, 255, 255, 0.12);
+    transform: rotate(45deg);
+    pointer-events: none;
+  }
+  .kite-bg::after {
+    content: '';
+    position: absolute;
+    bottom: -60px;
+    left: 10%;
+    width: 200px;
+    height: 200px;
+    background: rgba(255, 255, 255, 0.08);
+    transform: rotate(45deg);
+    pointer-events: none;
+  }
+  .btn-shopee {
+    background-color: #ee4d2d;
+    color: white;
+    transition: transform 0.2s, background-color 0.2s;
+  }
+  .btn-shopee:hover {
+    background-color: #f03e1b;
+    transform: translateY(-1px);
+  }
+  .card-shadow {
+    box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.08), 0 8px 10px -6px rgba(0, 0, 0, 0.04);
+  }
+  .diamond-shape {
+    width: 42px;
+    height: 42px;
+    background: #fbbf24;
+    transform: rotate(45deg);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 2px solid white;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+  }
+}

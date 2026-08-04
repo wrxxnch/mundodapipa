@@ -1,0 +1,40 @@
+{
+  "entities": {
+    "products": {
+      "title": "Products",
+      "description": "Catalog of kites, lines, reels, and accessories",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "category": { "type": "string" },
+        "price": { "type": "number" },
+        "originalPrice": { "type": "number" },
+        "image": { "type": "string" },
+        "description": { "type": "string" },
+        "specs": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "inStock": { "type": "boolean" },
+        "shopeeUrl": { "type": "string" },
+        "badge": { "type": "string" },
+        "rating": { "type": "number" },
+        "salesCount": { "type": "number" }
+      },
+      "required": ["name", "category", "price", "description", "inStock"]
+    },
+    "users": {
+      "title": "Users",
+      "description": "Registered customers and administrators",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string" },
+        "name": { "type": "string" },
+        "role": { "type": "string" }
+      },
+      "required": ["email", "role"]
+    }
+  }
+}
