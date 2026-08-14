@@ -20,6 +20,9 @@ export interface Product {
   price: number;
   originalPrice?: number;
   image: string;
+  images?: string[];
+  videoUrl?: string;
+  videos?: string[];
   description: string;
   specs: string[];
   inStock: boolean;

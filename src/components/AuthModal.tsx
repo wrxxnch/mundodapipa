@@ -86,7 +86,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
           <div className="flex items-center gap-2 mb-2">
             <ShieldCheck className="w-6 h-6 text-orange-500" />
-            <span className="text-xs font-black uppercase tracking-widest text-orange-400">Autenticação Firebase</span>
+            <span className="text-xs font-black uppercase tracking-widest text-orange-400">Acesso Seguro</span>
           </div>
 
           <h2 className="text-2xl font-black uppercase tracking-tight">

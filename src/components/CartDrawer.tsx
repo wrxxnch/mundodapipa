@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
-import { X, Trash2, ShoppingBag, ExternalLink, MessageCircle, Truck, ArrowRight } from 'lucide-react';
+import { X, Trash2, ShoppingBag, ExternalLink, MessageCircle, Truck, ArrowRight, Cloud } from 'lucide-react';
 import { CartItem } from '../types';
 import { SHOPEE_STORE_URL, WHATSAPP_NUMBER } from '../data/products';
 import { ShippingCalculator, ShippingOption } from './ShippingCalculator';
+import { UserProfile } from '../lib/firebase';
 
 interface CartDrawerProps {
   isOpen: boolean;
@@ -11,6 +12,7 @@ interface CartDrawerProps {
   onUpdateQuantity: (productId: string, quantity: number) => void;
   onRemoveItem: (productId: string) => void;
   onClearCart: () => void;
+  user?: UserProfile | null;
 }
 
 export const CartDrawer: React.FC<CartDrawerProps> = ({
@@ -20,6 +22,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
   onUpdateQuantity,
   onRemoveItem,
   onClearCart,
+  user
 }) => {
   const [selectedShipping, setSelectedShipping] = useState<ShippingOption | null>(null);
   const [shippingAddress, setShippingAddress] = useState<{ cep: string; address: string } | null>(null);
@@ -83,9 +86,18 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
             <div className="flex items-center gap-3">
               <ShoppingBag className="w-6 h-6 text-amber-400" />
               <div>
-                <h2 className="font-serif font-black text-lg">Seu Carrinho</h2>
+                <div className="flex items-center gap-2">
+                  <h2 className="font-serif font-black text-lg">Seu Carrinho</h2>
+                  {user && (
+                    <span className="text-[10px] bg-emerald-950 text-emerald-400 border border-emerald-800/80 px-2 py-0.5 rounded-full font-bold flex items-center gap-1">
+                      <Cloud className="w-3 h-3 text-emerald-400" />
+                      Carrinho Salvo na Conta
+                    </span>
+                  )}
+                </div>
                 <p className="text-xs text-slate-400">
                   {items.length} {items.length === 1 ? 'item selecionado' : 'itens selecionados'}
+                  {user && ` • Conectado como ${user.name}`}
                 </p>
               </div>
             </div>

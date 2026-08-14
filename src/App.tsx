@@ -22,6 +22,8 @@ import {
   deleteProductFromFirestore,
   clearAllProductsFromFirestore,
   registerShopeeItemDirectly,
+  saveUserCartToFirestore,
+  subscribeToUserCart,
   UserProfile 
 } from './lib/firebase';
 import { ShoppingBag } from 'lucide-react';
@@ -60,12 +62,32 @@ export default function App() {
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
 
-  // Clear all products action
+  // Clear all products action with Admin email verification
   const handleClearAllProducts = async () => {
-    if (window.confirm('Tem certeza que deseja REMOVER TODOS OS PRODUTOS do banco Firestore? Você poderá cadastrar novos itens do zero.')) {
+    if (!user || user.role !== 'admin') {
+      alert('Acesso restrito ao administrador do sistema.');
+      return;
+    }
+
+    const adminEmail = user.email || 'jeanpierreowner@gmail.com';
+    const inputEmail = window.prompt(
+      `ATENÇÃO: Ação irreversível!\n\nPara confirmar a exclusão de TODOS os produtos do catálogo, digite o e-mail do administrador (${adminEmail}):`
+    );
+
+    if (inputEmail === null) {
+      return; // Canceled by user
+    }
+
+    if (inputEmail.trim().toLowerCase() !== adminEmail.trim().toLowerCase()) {
+      alert('E-mail incorreto. A exclusão de todo o catálogo foi CANCELADA por segurança.');
+      return;
+    }
+
+    if (window.confirm('Confirmação final: Tem certeza que deseja apagar permanentemente todos os produtos do catálogo?')) {
       try {
         await clearAllProductsFromFirestore();
         setProducts([]);
+        alert('Catálogo limpo com sucesso! Você pode cadastrar novos itens.');
       } catch (err: any) {
         alert('Erro ao limpar produtos: ' + err.message);
       }
@@ -97,13 +119,54 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
+  // Real-time Firestore Cart Sync per User (or LocalStorage fallback for guests)
+  const isInitialUserSync = React.useRef(true);
+
   useEffect(() => {
-    try {
-      localStorage.setItem('mundo_pipa_cart', JSON.stringify(cartItems));
-    } catch (e) {
-      console.error('Error saving cart state', e);
+    if (!user?.uid) {
+      // Guest mode: load guest cart from localStorage
+      try {
+        const savedGuest = localStorage.getItem('mundo_pipa_cart_guest') || localStorage.getItem('mundo_pipa_cart');
+        if (savedGuest) {
+          setCartItems(JSON.parse(savedGuest));
+        }
+      } catch (e) {}
+      return;
     }
-  }, [cartItems]);
+
+    // Logged-in mode: subscribe to user's cart in Firestore
+    isInitialUserSync.current = true;
+    const unsubscribe = subscribeToUserCart(user.uid, (firestoreItems) => {
+      setCartItems((currentItems) => {
+        if (firestoreItems && firestoreItems.length > 0) {
+          return firestoreItems;
+        }
+        if (isInitialUserSync.current && currentItems.length > 0) {
+          saveUserCartToFirestore(user.uid, currentItems);
+          return currentItems;
+        }
+        return firestoreItems || [];
+      });
+      isInitialUserSync.current = false;
+    });
+
+    return () => unsubscribe();
+  }, [user?.uid]);
+
+  // Save cart changes to Firestore (if logged in) and localStorage
+  useEffect(() => {
+    if (user?.uid) {
+      saveUserCartToFirestore(user.uid, cartItems);
+      try {
+        localStorage.setItem(`mundo_pipa_cart_${user.uid}`, JSON.stringify(cartItems));
+      } catch (e) {}
+    } else {
+      try {
+        localStorage.setItem('mundo_pipa_cart_guest', JSON.stringify(cartItems));
+        localStorage.setItem('mundo_pipa_cart', JSON.stringify(cartItems));
+      } catch (e) {}
+    }
+  }, [cartItems, user?.uid]);
 
   // Cart total count
   const cartCount = useMemo(() => {
@@ -165,7 +228,7 @@ export default function App() {
   };
 
   const handleDeleteProduct = async (product: Product) => {
-    if (window.confirm(`Tem certeza que deseja DELETAR o item "${product.name}" do banco FirebaseDB?`)) {
+    if (window.confirm(`Tem certeza que deseja DELETAR o item "${product.name}" do catálogo?`)) {
       try {
         await deleteProductFromFirestore(product.id);
       } catch (err: any) {
@@ -227,45 +290,6 @@ export default function App() {
         onLogout={logoutAppUser}
         onOpenAddProduct={handleOpenAddProduct}
       />
-
-      {/* Admin Logged-In Top Banner */}
-      {user?.role === 'admin' && (
-        <div className="bg-slate-900 text-amber-400 border-b border-amber-400/30 px-4 py-2 text-xs font-black flex flex-wrap items-center justify-between gap-2 shadow-inner">
-          <div className="flex items-center gap-2 max-w-7xl mx-auto w-full justify-between">
-            <div className="flex items-center gap-2">
-              <ShieldCheck className="w-4 h-4 text-orange-500" />
-              <span>Painel Admin Conectado (FirebaseDB) — Você pode cadastrar, editar e remover produtos do zero.</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={handleRegisterShopeeItem}
-                className="bg-amber-500 hover:bg-amber-400 text-slate-950 font-black px-2.5 py-1 rounded-lg text-xs flex items-center gap-1 shadow transition-colors"
-                title="Cadastrar Fio 10 3mil Jardas 2P Oficial da Shopee"
-              >
-                <ShoppingBag className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">+ Item Shopee (Fio 10)</span>
-              </button>
-              {products.length > 0 && (
-                <button
-                  onClick={handleClearAllProducts}
-                  className="bg-red-950/80 hover:bg-red-900 text-red-300 border border-red-800 font-extrabold px-2.5 py-1 rounded-lg text-xs flex items-center gap-1 transition-colors"
-                  title="Remover todos os produtos do banco"
-                >
-                  <Trash2 className="w-3.5 h-3.5" />
-                  <span className="hidden sm:inline">Limpar Catálogo</span>
-                </button>
-              )}
-              <button
-                onClick={handleOpenAddProduct}
-                className="bg-orange-600 hover:bg-orange-700 text-white font-black px-3 py-1 rounded-lg text-xs uppercase tracking-wider flex items-center gap-1 shadow"
-              >
-                <Plus className="w-3.5 h-3.5" />
-                <span>Cadastrar Novo Item</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
 
       {/* Hero Banner Section */}
@@ -335,7 +359,7 @@ export default function App() {
                 Catálogo Vazio (Pronto para Inserir do Zero)
               </h3>
               <p className="text-slate-500 text-xs sm:text-sm mt-2 max-w-md mx-auto leading-relaxed">
-                Todos os produtos anteriores foram removidos. Agora você pode cadastrar e organizar seus produtos do zero no banco Firebase.
+                Todos os produtos anteriores foram removidos. Agora você pode cadastrar e organizar seus produtos do zero.
               </p>
               {user?.role === 'admin' ? (
                 <button
@@ -440,6 +464,7 @@ export default function App() {
         onUpdateQuantity={handleUpdateQuantity}
         onRemoveItem={handleRemoveFromCart}
         onClearCart={handleClearCart}
+        user={user}
       />
 
     </div>

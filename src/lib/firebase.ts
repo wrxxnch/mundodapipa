@@ -26,7 +26,7 @@ import {
 } from 'firebase/auth';
 
 import firebaseConfig from '../../firebase-applet-config.json';
-import { Product } from '../types';
+import { Product, CartItem } from '../types';
 import { PRODUCTS as DEFAULT_PRODUCTS } from '../data/products';
 
 // Initialize Firebase
@@ -97,6 +97,9 @@ export const subscribeToProducts = (onData: (products: Product[]) => void) => {
         price: Number(data.price) || 0,
         originalPrice: data.originalPrice ? Number(data.originalPrice) : undefined,
         image: data.image || 'https://images.unsplash.com/photo-1534447677768-be436bb09401?auto=format&fit=crop&w=600&q=80',
+        images: Array.isArray(data.images) ? data.images : undefined,
+        videoUrl: data.videoUrl || undefined,
+        videos: Array.isArray(data.videos) ? data.videos : undefined,
         description: data.description || '',
         specs: Array.isArray(data.specs) ? data.specs : [],
         inStock: data.inStock !== false,
@@ -145,6 +148,35 @@ export const updateProductInFirestore = async (id: string, updates: Partial<Prod
 export const deleteProductFromFirestore = async (id: string) => {
   const docRef = doc(db, 'products', id);
   await deleteDoc(docRef);
+};
+
+// User Shopping Cart Firestore Sync
+export const saveUserCartToFirestore = async (userId: string, items: CartItem[]) => {
+  if (!userId) return;
+  try {
+    const cartDocRef = doc(db, 'carts', userId);
+    await setDoc(cartDocRef, {
+      items: items || [],
+      updatedAt: new Date().toISOString()
+    }, { merge: true });
+  } catch (err) {
+    console.error('Error saving user cart to Firestore:', err);
+  }
+};
+
+export const subscribeToUserCart = (userId: string, onData: (items: CartItem[]) => void) => {
+  if (!userId) return () => {};
+  const cartDocRef = doc(db, 'carts', userId);
+  return onSnapshot(cartDocRef, (docSnap) => {
+    if (docSnap.exists()) {
+      const data = docSnap.data();
+      if (Array.isArray(data.items)) {
+        onData(data.items);
+      }
+    }
+  }, (err) => {
+    console.error('Error subscribing to user cart:', err);
+  });
 };
 
 const SESSION_KEY = 'mundo_pipa_user_session';

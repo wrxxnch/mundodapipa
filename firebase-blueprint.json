@@ -35,6 +35,16 @@
         "role": { "type": "string" }
       },
       "required": ["email", "role"]
+    },
+    "carts": {
+      "title": "Carts",
+      "description": "User persistent shopping carts",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "items": { "type": "array" },
+        "updatedAt": { "type": "string" }
+      }
     }
   }
 }

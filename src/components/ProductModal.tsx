@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import { X, Star, ShoppingCart, ExternalLink, Check, ShieldCheck, Truck, Sparkles, MessageSquare, CornerDownRight } from 'lucide-react';
+import { X, Star, ShoppingCart, ExternalLink, Check, ShieldCheck, Truck, Sparkles, MessageSquare, CornerDownRight, Video, Play, Image as ImageIcon } from 'lucide-react';
 import { Product } from '../types';
 import { ShippingCalculator } from './ShippingCalculator';
+import { FastImage } from './FastImage';
 
 interface ProductModalProps {
   product: Product | null;
@@ -16,8 +17,14 @@ export const ProductModal: React.FC<ProductModalProps> = ({
 }) => {
   const [quantity, setQuantity] = useState(1);
   const [added, setAdded] = useState(false);
+  const [activeTab, setActiveTab] = useState<'photo' | 'video'>('photo');
+  const [selectedPhotoIndex, setSelectedPhotoIndex] = useState(0);
 
   if (!product) return null;
+
+  const galleryImages = product.images && product.images.length > 0 ? product.images : [product.image];
+  const activeImage = galleryImages[selectedPhotoIndex] || product.image;
+  const videoUrl = product.videoUrl || (product.videos && product.videos[0]);
 
   const handleAdd = () => {
     onAddToCart(product, quantity);
@@ -43,18 +50,81 @@ export const ProductModal: React.FC<ProductModalProps> = ({
         </button>
 
         <div className="grid grid-cols-1 md:grid-cols-2">
-          {/* Product Image */}
-          <div className="relative bg-slate-100 p-6 flex flex-col items-center justify-center">
-            <img
-              src={product.image}
-              alt={product.name}
-              className="max-h-72 w-full object-contain rounded-xl shadow-md"
-              referrerPolicy="no-referrer"
-            />
-            {product.badge && (
-              <span className="absolute top-4 left-4 bg-slate-900 text-amber-400 text-xs font-black px-3 py-1 rounded-md shadow">
-                {product.badge}
-              </span>
+          {/* Product Media Column */}
+          <div className="relative bg-slate-100 p-5 flex flex-col items-center justify-between">
+            {/* Media Selector Tabs if video exists */}
+            {videoUrl && (
+              <div className="flex items-center gap-1 bg-white p-1 rounded-full shadow-sm mb-3 border border-slate-200 text-xs font-bold z-10">
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('photo')}
+                  className={`px-3 py-1 rounded-full flex items-center gap-1 transition-all ${
+                    activeTab === 'photo' ? 'bg-orange-600 text-white shadow' : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  <ImageIcon className="w-3.5 h-3.5" />
+                  <span>Fotos ({galleryImages.length})</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('video')}
+                  className={`px-3 py-1 rounded-full flex items-center gap-1 transition-all ${
+                    activeTab === 'video' ? 'bg-orange-600 text-white shadow' : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  <Video className="w-3.5 h-3.5" />
+                  <span>Vídeo Demo</span>
+                </button>
+              </div>
+            )}
+
+            {/* Media Display Area */}
+            <div className="w-full h-64 flex items-center justify-center my-auto relative">
+              {activeTab === 'photo' ? (
+                <FastImage
+                  src={activeImage}
+                  alt={product.name}
+                  className="max-h-60 w-full object-contain rounded-xl shadow-md transition-all duration-300"
+                />
+              ) : videoUrl ? (
+                <div className="w-full h-full rounded-xl overflow-hidden shadow-inner bg-black flex items-center justify-center">
+                  <video
+                    src={videoUrl}
+                    controls
+                    autoPlay
+                    playsInline
+                    preload="metadata"
+                    className="w-full h-full object-contain"
+                  >
+                    Seu navegador não suporta reprodução de vídeo.
+                  </video>
+                </div>
+              ) : null}
+
+              {product.badge && (
+                <span className="absolute top-2 left-2 bg-slate-900 text-amber-400 text-xs font-black px-2.5 py-1 rounded-md shadow">
+                  {product.badge}
+                </span>
+              )}
+            </div>
+
+            {/* Multi Photo Thumbnails Bar */}
+            {activeTab === 'photo' && galleryImages.length > 1 && (
+              <div className="flex items-center gap-2 mt-3 overflow-x-auto w-full py-1 justify-center">
+                {galleryImages.map((img, idx) => (
+                  <button
+                    key={idx}
+                    onClick={() => setSelectedPhotoIndex(idx)}
+                    className={`w-12 h-12 rounded-lg border-2 overflow-hidden transition-all shrink-0 ${
+                      selectedPhotoIndex === idx
+                        ? 'border-orange-600 scale-105 shadow-md'
+                        : 'border-slate-300 opacity-60 hover:opacity-100'
+                    }`}
+                  >
+                    <FastImage src={img} alt="" className="w-full h-full object-cover" />
+                  </button>
+                ))}
+              </div>
             )}
           </div>
 

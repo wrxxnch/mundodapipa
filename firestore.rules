@@ -10,5 +10,10 @@ service cloud.firestore {
     match /users/{userId} {
       allow read, write: if true;
     }
+
+    // Carts collection: allow read & write for user cart sync
+    match /carts/{userId} {
+      allow read, write: if true;
+    }
   }
 }

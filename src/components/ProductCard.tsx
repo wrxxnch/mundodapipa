@@ -1,6 +1,7 @@
 import React from 'react';
 import { Star, ShoppingCart, ExternalLink, Check, Eye, Pencil, Trash2, ShieldCheck, DollarSign } from 'lucide-react';
 import { Product } from '../types';
+import { FastImage } from './FastImage';
 
 interface ProductCardProps {
   product: Product;
@@ -86,11 +87,10 @@ export const ProductCard: React.FC<ProductCardProps> = ({
 
       {/* Top Badge or Diamond Kite Accent */}
       <div className="relative w-full aspect-square bg-slate-50 rounded-2xl overflow-hidden mb-4 p-2 flex items-center justify-center">
-        <img
+        <FastImage
           src={product.image}
           alt={product.name}
           className="w-full h-full object-cover rounded-xl group-hover:scale-105 transition-transform duration-500"
-          referrerPolicy="no-referrer"
         />
 
         {/* Diamond Kite Badge */}
