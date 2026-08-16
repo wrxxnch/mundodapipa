@@ -1,6 +1,6 @@
 import React from 'react';
 import { ShoppingBag, Award, Star, ExternalLink, ShieldCheck, Sparkles, MessageCircle, Instagram } from 'lucide-react';
-import logoImg from '../assets/images/logo.png';
+import logoImg from '../src/assets/images/logo.png';
 import { SHOPEE_STORE_URL, WHATSAPP_NUMBER } from '../data/products';
 
 interface HeroProps {
