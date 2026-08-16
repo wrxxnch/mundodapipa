@@ -1,24 +1,23 @@
 import React from 'react';
-import { Heart, ExternalLink, MessageCircle, MapPin, Phone, Mail, ShieldCheck, Sparkles, Rocket } from 'lucide-react';
-import logoImg from '../assets/images/mundo_pipa_logo_1785770997796.jpg';
-import alienMascotImg from '../assets/images/alien_mascot_badge_1786676801815.jpg';
+import { Heart, ExternalLink, MessageCircle, Instagram, ShieldCheck, Sparkles, MapPin, Truck } from 'lucide-react';
+import logoImg from '../assets/images/logo.png';
 import { SHOPEE_STORE_URL, WHATSAPP_NUMBER } from '../data/products';
 
 export const Footer: React.FC = () => {
   return (
-    <footer className="bg-slate-950 text-slate-400 border-t-2 border-purple-900/40 pt-12 pb-8">
+    <footer className="bg-slate-950 text-slate-400 border-t border-slate-800 pt-12 pb-8">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8 pb-12 border-b border-purple-900/30">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8 pb-12 border-b border-slate-800">
           
-          {/* Col 1: Brand Info & Alien Mascot */}
+          {/* Col 1: Brand Info & Official Logo */}
           <div>
             <div className="flex items-center gap-3 mb-4">
-              <div className="w-12 h-12 rounded-2xl overflow-hidden border-2 border-emerald-400 bg-slate-900 p-0.5 shadow-md neon-glow-green shrink-0">
+              <div className="w-14 h-14 shrink-0">
                 <img
-                  src={alienMascotImg}
-                  alt="Mundo da Pipa Alien Mascot"
-                  className="w-full h-full object-cover rounded-xl"
+                  src={logoImg}
+                  alt="Mundo da Pipa"
+                  className="w-full h-full object-contain drop-shadow-md"
                   referrerPolicy="no-referrer"
                 />
               </div>
@@ -26,8 +25,8 @@ export const Footer: React.FC = () => {
                 <h3 className="font-serif font-black text-white text-lg leading-none">
                   MUNDO DA PIPA
                 </h3>
-                <span className="text-emerald-400 font-extrabold text-[10px] tracking-widest uppercase block mt-0.5">
-                  🛸 Desde 1999 • Psicodélico Espacial
+                <span className="text-amber-400 font-extrabold text-[10px] tracking-widest uppercase block mt-1">
+                  Dedicação à Arte Desde 1999
                 </span>
               </div>
             </div>
@@ -38,24 +37,24 @@ export const Footer: React.FC = () => {
 
           {/* Col 2: Navigation Links */}
           <div>
-            <h4 className="font-bold text-white text-sm uppercase tracking-wider mb-4 border-l-2 border-cyan-400 pl-2">
+            <h4 className="font-bold text-white text-sm uppercase tracking-wider mb-4 border-l-2 border-amber-400 pl-2">
               Navegação Rápida
             </h4>
             <ul className="space-y-2 text-xs font-medium">
               <li>
-                <a href="#" className="hover:text-cyan-300 transition-colors">Início</a>
+                <a href="#" className="hover:text-amber-400 transition-colors">Início</a>
               </li>
               <li>
-                <a href="#produtos" className="hover:text-cyan-300 transition-colors">Produtos e Raias</a>
+                <a href="#produtos" className="hover:text-amber-400 transition-colors">Produtos e Raias</a>
               </li>
               <li>
                 <a href={SHOPEE_STORE_URL} target="_blank" rel="noopener noreferrer" className="hover:text-orange-400 transition-colors flex items-center gap-1">
-                  <span>🛸 Loja Oficial Shopee</span>
+                  <span>Loja Oficial Shopee</span>
                   <ExternalLink className="w-3 h-3 text-orange-400" />
                 </a>
               </li>
               <li>
-                <a href="#historia" className="hover:text-cyan-300 transition-colors">Nossa História</a>
+                <a href="#historia" className="hover:text-amber-400 transition-colors">Nossa História</a>
               </li>
             </ul>
           </div>
@@ -78,7 +77,7 @@ export const Footer: React.FC = () => {
                 </a>
               </li>
               <li className="flex items-center gap-2">
-                <Sparkles className="w-4 h-4 text-pink-400 shrink-0" />
+                <Instagram className="w-4 h-4 text-pink-400 shrink-0" />
                 <a
                   href="https://instagram.com/mundodapipa.oficial"
                   target="_blank"
@@ -89,7 +88,7 @@ export const Footer: React.FC = () => {
                 </a>
               </li>
               <li className="flex items-center gap-2">
-                <Rocket className="w-4 h-4 text-cyan-400 shrink-0" />
+                <Truck className="w-4 h-4 text-amber-400 shrink-0" />
                 <span>Envio rápido para todo o Brasil</span>
               </li>
             </ul>
@@ -97,12 +96,12 @@ export const Footer: React.FC = () => {
 
           {/* Col 4: Official Shopee Badge Card */}
           <div>
-            <div className="bg-gradient-to-br from-slate-900 via-purple-950/40 to-slate-900 p-4 rounded-2xl border border-purple-700/50 text-center shadow-lg">
+            <div className="bg-slate-900 p-4 rounded-2xl border border-slate-800 text-center shadow-lg">
               <div className="w-10 h-10 bg-orange-600 text-white rounded-xl flex items-center justify-center mx-auto mb-2 font-black text-xs shadow-md">
                 Shopee
               </div>
               <h5 className="font-bold text-white text-xs">Loja Oficial Verificada</h5>
-              <p className="text-[11px] text-cyan-200 mt-1">
+              <p className="text-[11px] text-slate-300 mt-1">
                 Aproveite frete grátis com cupom e parcelamento sem juros!
               </p>
               <a
@@ -134,4 +133,3 @@ export const Footer: React.FC = () => {
     </footer>
   );
 };
-

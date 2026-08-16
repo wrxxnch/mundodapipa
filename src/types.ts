@@ -29,7 +29,7 @@ export interface Product {
   shopeeUrl: string;
   badge?: string;
   rating: number;
-  salesCount: number;
+  salesCount?: number;
   reviews?: ProductReview[];
 }
 

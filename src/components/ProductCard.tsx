@@ -125,9 +125,11 @@ export const ProductCard: React.FC<ProductCardProps> = ({
               <Star className="w-3.5 h-3.5 fill-amber-400" />
               <span>{product.rating.toFixed(1)}</span>
             </div>
-            <span className="text-[11px] font-medium text-slate-400">
-              {product.salesCount}+ vendidos
-            </span>
+            {Boolean(product.salesCount && product.salesCount > 0) && (
+              <span className="text-[11px] font-semibold text-slate-600 bg-slate-100 px-2 py-0.5 rounded-full">
+                {product.salesCount} vendidos
+              </span>
+            )}
           </div>
 
           <h3 className="text-slate-900 font-bold text-base line-clamp-2 leading-snug group-hover:text-sky-600 transition-colors">
@@ -145,9 +147,9 @@ export const ProductCard: React.FC<ProductCardProps> = ({
             <span className="text-2xl font-black text-emerald-600 font-sans tracking-tight">
               R$ {product.price.toFixed(2).replace('.', ',')}
             </span>
-            {product.originalPrice && (
+            {Boolean(product.originalPrice && product.originalPrice > product.price) && (
               <span className="text-[11px] text-slate-400 line-through -mt-1">
-                R$ {product.originalPrice.toFixed(2).replace('.', ',')}
+                R$ {product.originalPrice!.toFixed(2).replace('.', ',')}
               </span>
             )}
           </div>

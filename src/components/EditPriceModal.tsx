@@ -18,6 +18,7 @@ export const EditPriceModal: React.FC<EditPriceModalProps> = ({
 
   const [price, setPrice] = useState(product.price.toString());
   const [originalPrice, setOriginalPrice] = useState(product.originalPrice ? product.originalPrice.toString() : '');
+  const [salesCount, setSalesCount] = useState(product.salesCount != null ? product.salesCount.toString() : '');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -31,18 +32,25 @@ export const EditPriceModal: React.FC<EditPriceModalProps> = ({
       return;
     }
 
-    const numOrigPrice = originalPrice ? parseFloat(originalPrice.replace(',', '.')) : undefined;
+    const numOrigPrice = originalPrice && parseFloat(originalPrice.replace(',', '.')) > 0
+      ? parseFloat(originalPrice.replace(',', '.'))
+      : null;
+
+    const numSales = salesCount.trim() && !isNaN(parseInt(salesCount.trim(), 10)) && parseInt(salesCount.trim(), 10) > 0
+      ? parseInt(salesCount.trim(), 10)
+      : null;
 
     setLoading(true);
 
     try {
       await updateProductInFirestore(product.id, {
         price: numPrice,
-        originalPrice: numOrigPrice
+        originalPrice: numOrigPrice !== null ? numOrigPrice : undefined,
+        salesCount: numSales !== null ? numSales : undefined
       });
       onClose();
     } catch (err: any) {
-      setError('Erro ao atualizar preço: ' + err.message);
+      setError('Erro ao atualizar dados: ' + err.message);
     } finally {
       setLoading(false);
     }
@@ -112,6 +120,18 @@ export const EditPriceModal: React.FC<EditPriceModalProps> = ({
               onChange={(e) => setOriginalPrice(e.target.value)}
               placeholder="Ex: 29.90 (opcional)"
               className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-600 focus:outline-none focus:border-orange-500"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-extrabold uppercase text-slate-600 mb-1">Qtd. Itens Vendidos (Opcional)</label>
+            <input
+              type="number"
+              min="0"
+              value={salesCount}
+              onChange={(e) => setSalesCount(e.target.value)}
+              placeholder="Ex: 120 (deixe em branco se novo)"
+              className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-700 focus:outline-none focus:border-orange-500"
             />
           </div>
 

@@ -261,7 +261,7 @@ export default function App() {
     } else if (sortBy === 'price-desc') {
       list.sort((a, b) => b.price - a.price);
     } else if (sortBy === 'sales') {
-      list.sort((a, b) => b.salesCount - a.salesCount);
+      list.sort((a, b) => (b.salesCount || 0) - (a.salesCount || 0));
     }
 
     return list;

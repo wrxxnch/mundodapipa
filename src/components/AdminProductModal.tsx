@@ -19,6 +19,7 @@ export const AdminProductModal: React.FC<AdminProductModalProps> = ({
   const [category, setCategory] = useState<Category>('pipas');
   const [price, setPrice] = useState<string>('');
   const [originalPrice, setOriginalPrice] = useState<string>('');
+  const [salesCount, setSalesCount] = useState<string>('');
   const [image, setImage] = useState('');
   const [images, setImages] = useState<string[]>([]);
   const [extraImageUrl, setExtraImageUrl] = useState('');
@@ -46,6 +47,7 @@ export const AdminProductModal: React.FC<AdminProductModalProps> = ({
       setCategory(productToEdit.category);
       setPrice(productToEdit.price.toString());
       setOriginalPrice(productToEdit.originalPrice ? productToEdit.originalPrice.toString() : '');
+      setSalesCount(productToEdit.salesCount != null ? productToEdit.salesCount.toString() : '');
       setImage(productToEdit.image);
       setImages(productToEdit.images || [productToEdit.image]);
       setVideoUrl(productToEdit.videoUrl || '');
@@ -61,6 +63,7 @@ export const AdminProductModal: React.FC<AdminProductModalProps> = ({
       setCategory('pipas');
       setPrice('');
       setOriginalPrice('');
+      setSalesCount('');
       setImage('');
       setImages([]);
       setExtraImageUrl('');
@@ -155,7 +158,13 @@ export const AdminProductModal: React.FC<AdminProductModalProps> = ({
       return;
     }
 
-    const numOrigPrice = originalPrice ? parseFloat(originalPrice.replace(',', '.')) : undefined;
+    const numOrigPrice = originalPrice && parseFloat(originalPrice.replace(',', '.')) > 0
+      ? parseFloat(originalPrice.replace(',', '.'))
+      : undefined;
+
+    const numSalesCount = salesCount.trim() && !isNaN(parseInt(salesCount.trim(), 10)) && parseInt(salesCount.trim(), 10) > 0
+      ? parseInt(salesCount.trim(), 10)
+      : undefined;
 
     setLoading(true);
 
@@ -177,7 +186,7 @@ export const AdminProductModal: React.FC<AdminProductModalProps> = ({
         shopeeUrl,
         badge: badge.trim() || undefined,
         rating: productToEdit ? productToEdit.rating : 5.0,
-        salesCount: productToEdit ? productToEdit.salesCount : 0
+        salesCount: numSalesCount
       };
 
       if (productToEdit) {
@@ -274,8 +283,8 @@ export const AdminProductModal: React.FC<AdminProductModalProps> = ({
             </div>
           </div>
 
-          {/* Pricing Row */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 bg-slate-50 p-4 rounded-2xl border border-slate-200">
+          {/* Pricing & Sales Row */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 bg-slate-50 p-4 rounded-2xl border border-slate-200">
             <div>
               <label className="block text-xs font-black uppercase text-emerald-700 mb-1">Preço Atual (R$)</label>
               <div className="relative">
@@ -292,7 +301,7 @@ export const AdminProductModal: React.FC<AdminProductModalProps> = ({
             </div>
 
             <div>
-              <label className="block text-xs font-black uppercase text-slate-500 mb-1">Preço Original (De)</label>
+              <label className="block text-xs font-black uppercase text-slate-500 mb-1">Preço Antigo (De)</label>
               <input
                 type="text"
                 value={originalPrice}
@@ -303,12 +312,24 @@ export const AdminProductModal: React.FC<AdminProductModalProps> = ({
             </div>
 
             <div>
+              <label className="block text-xs font-black uppercase text-slate-700 mb-1">Qtd. Vendidos (Opcional)</label>
+              <input
+                type="number"
+                min="0"
+                value={salesCount}
+                onChange={(e) => setSalesCount(e.target.value)}
+                placeholder="Ex: 120 (opcional)"
+                className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-sm font-semibold text-slate-900 focus:outline-none focus:border-orange-500"
+              />
+            </div>
+
+            <div>
               <label className="block text-xs font-black uppercase text-slate-700 mb-1">Selo / Badge</label>
               <input
                 type="text"
                 value={badge}
                 onChange={(e) => setBadge(e.target.value)}
-                placeholder="Ex: Mais Vendido, Oferta"
+                placeholder="Ex: Mais Vendido"
                 className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-sm font-semibold text-slate-900 focus:outline-none focus:border-orange-500"
               />
             </div>

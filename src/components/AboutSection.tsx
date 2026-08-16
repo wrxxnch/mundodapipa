@@ -1,6 +1,6 @@
 import React from 'react';
 import { Award, Heart, Sparkles, ShieldCheck, Flag } from 'lucide-react';
-import logoImg from '../assets/images/mundo_pipa_logo_1785770997796.jpg';
+import logoImg from '../assets/images/logo.png';
 
 export const AboutSection: React.FC = () => {
   return (
@@ -15,17 +15,14 @@ export const AboutSection: React.FC = () => {
           {/* Left Column: Brand Emblem & Stats */}
           <div className="lg:col-span-5 text-center flex flex-col items-center">
             <div className="relative mb-6">
-              <div className="w-40 h-40 sm:w-48 sm:h-48 rounded-2xl border-4 border-orange-500 bg-white p-1 shadow-2xl overflow-hidden hover:scale-105 transition-transform duration-500">
+              <div className="w-44 h-44 sm:w-52 sm:h-52 flex items-center justify-center hover:scale-105 transition-transform duration-500">
                 <img
                   src={logoImg}
                   alt="Mundo da Pipa Arte desde 1999"
-                  className="w-full h-full object-cover rounded-xl"
+                  className="w-full h-full object-contain drop-shadow-[0_15px_25px_rgba(245,158,11,0.25)]"
                   referrerPolicy="no-referrer"
                 />
               </div>
-              <span className="absolute -bottom-2 bg-gradient-to-r from-orange-500 to-amber-500 text-white font-black text-xs px-4 py-1.5 rounded-full shadow-lg border border-white/20 uppercase tracking-wider">
-                Tradição desde 1999
-              </span>
             </div>
 
             <div className="grid grid-cols-2 gap-4 w-full mt-4">

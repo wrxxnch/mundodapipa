@@ -134,7 +134,9 @@ export const ProductModal: React.FC<ProductModalProps> = ({
               <div className="flex items-center gap-2 text-xs font-bold text-amber-600 mb-1">
                 <Star className="w-4 h-4 fill-amber-400 text-amber-400" />
                 <span>{product.rating.toFixed(1)} / 5.0</span>
-                <span className="text-slate-400">({product.salesCount} vendas na Shopee)</span>
+                {Boolean(product.salesCount && product.salesCount > 0) && (
+                  <span className="text-slate-500 font-medium">({product.salesCount} vendidos)</span>
+                )}
               </div>
 
               <h2 className="text-xl sm:text-2xl font-black text-slate-900 font-serif leading-tight">
@@ -145,9 +147,9 @@ export const ProductModal: React.FC<ProductModalProps> = ({
                 <span className="text-3xl font-black text-slate-900 font-serif">
                   R$ {product.price.toFixed(2).replace('.', ',')}
                 </span>
-                {product.originalPrice && (
+                {Boolean(product.originalPrice && product.originalPrice > product.price) && (
                   <span className="text-sm text-slate-400 line-through">
-                    R$ {product.originalPrice.toFixed(2).replace('.', ',')}
+                    R$ {product.originalPrice!.toFixed(2).replace('.', ',')}
                   </span>
                 )}
               </div>

@@ -95,7 +95,7 @@ export const subscribeToProducts = (onData: (products: Product[]) => void) => {
         name: data.name || '',
         category: data.category || 'pipas',
         price: Number(data.price) || 0,
-        originalPrice: data.originalPrice ? Number(data.originalPrice) : undefined,
+        originalPrice: data.originalPrice && Number(data.originalPrice) > (Number(data.price) || 0) ? Number(data.originalPrice) : undefined,
         image: data.image || 'https://images.unsplash.com/photo-1534447677768-be436bb09401?auto=format&fit=crop&w=600&q=80',
         images: Array.isArray(data.images) ? data.images : undefined,
         videoUrl: data.videoUrl || undefined,
@@ -106,7 +106,7 @@ export const subscribeToProducts = (onData: (products: Product[]) => void) => {
         shopeeUrl: data.shopeeUrl || 'https://shopee.com.br/mundo_da_pipa',
         badge: data.badge || undefined,
         rating: Number(data.rating) || 5.0,
-        salesCount: Number(data.salesCount) || 0,
+        salesCount: data.salesCount != null && Number(data.salesCount) > 0 ? Number(data.salesCount) : undefined,
         reviews: Array.isArray(data.reviews) ? data.reviews : SHOPEE_PRODUCT_FIO10.reviews
       });
     });
