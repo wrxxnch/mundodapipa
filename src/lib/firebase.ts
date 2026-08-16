@@ -9,9 +9,7 @@ import {
   addDoc, 
   updateDoc, 
   deleteDoc, 
-  onSnapshot,
-  query,
-  orderBy
+  onSnapshot
 } from 'firebase/firestore';
 import { 
   getAuth, 
@@ -27,12 +25,60 @@ import {
 
 import firebaseConfig from '../../firebase-applet-config.json';
 import { Product, CartItem } from '../types';
-import { PRODUCTS as DEFAULT_PRODUCTS } from '../data/products';
+import { SHOPEE_PRODUCT_FIO10 } from '../data/shopeeData';
 
 // Initialize Firebase
 const app = initializeApp(firebaseConfig);
 export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId || undefined);
 export const auth = getAuth(app);
+
+export enum OperationType {
+  CREATE = 'create',
+  UPDATE = 'update',
+  DELETE = 'delete',
+  LIST = 'list',
+  GET = 'get',
+  WRITE = 'write',
+}
+
+export interface FirestoreErrorInfo {
+  error: string;
+  operationType: OperationType;
+  path: string | null;
+  authInfo: {
+    userId?: string | null;
+    email?: string | null;
+    emailVerified?: boolean | null;
+    isAnonymous?: boolean | null;
+    tenantId?: string | null;
+    providerInfo?: {
+      providerId?: string | null;
+      email?: string | null;
+    }[];
+  };
+}
+
+export function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
+  const errMessage = error instanceof Error ? error.message : String(error);
+  const errInfo: FirestoreErrorInfo = {
+    error: errMessage,
+    authInfo: {
+      userId: auth.currentUser?.uid,
+      email: auth.currentUser?.email,
+      emailVerified: auth.currentUser?.emailVerified,
+      isAnonymous: auth.currentUser?.isAnonymous,
+      tenantId: auth.currentUser?.tenantId,
+      providerInfo: auth.currentUser?.providerData?.map(provider => ({
+        providerId: provider.providerId,
+        email: provider.email,
+      })) || []
+    },
+    operationType,
+    path
+  };
+  console.warn('Firestore Operation Info:', JSON.stringify(errInfo));
+  return errInfo;
+}
 
 export interface UserProfile {
   uid: string;
@@ -46,41 +92,73 @@ const ADMIN_EMAILS = [
   'jeanpierreowner@gmail.com'
 ];
 
-import { SHOPEE_PRODUCT_FIO10 } from '../data/shopeeData';
+const LOCAL_PRODUCTS_CACHE_KEY = 'mundo_pipa_products_cache';
 
-// Seed initial products only if requested or if empty
+// Helper to check for Quota limit error
+export const isQuotaError = (error: any): boolean => {
+  if (!error) return false;
+  const msg = error?.message || String(error);
+  return msg.includes('resource-exhausted') || msg.includes('Quota limit exceeded') || msg.includes('Quota exceeded');
+};
+
+// Seed initial products only if collection is empty
+let isSeeding = false;
 export const initializeProductsSeed = async () => {
+  if (isSeeding) return;
+  isSeeding = true;
   try {
     const productsRef = collection(db, 'products');
     const snapshot = await getDocs(productsRef);
     if (snapshot.empty) {
-      console.log('Seeding official Shopee product Fio 10 3000y to Firestore...');
       const docRef = doc(productsRef, SHOPEE_PRODUCT_FIO10.id);
       await setDoc(docRef, {
         ...SHOPEE_PRODUCT_FIO10,
         createdAt: new Date().toISOString()
       });
     }
-  } catch (error) {
-    console.log('Firestore seed info:', error);
+  } catch (error: any) {
+    if (isQuotaError(error)) {
+      console.warn('Firestore daily write quota reached. Local fallback active.');
+    } else {
+      handleFirestoreError(error, OperationType.WRITE, 'products');
+    }
+  } finally {
+    isSeeding = false;
   }
 };
 
 export const registerShopeeItemDirectly = async () => {
-  const productsRef = collection(db, 'products');
-  const docRef = doc(productsRef, SHOPEE_PRODUCT_FIO10.id);
-  await setDoc(docRef, {
-    ...SHOPEE_PRODUCT_FIO10,
-    updatedAt: new Date().toISOString()
-  }, { merge: true });
+  try {
+    const productsRef = collection(db, 'products');
+    const docRef = doc(productsRef, SHOPEE_PRODUCT_FIO10.id);
+    await setDoc(docRef, {
+      ...SHOPEE_PRODUCT_FIO10,
+      updatedAt: new Date().toISOString()
+    }, { merge: true });
+  } catch (error: any) {
+    if (isQuotaError(error)) {
+      console.warn('Quota limit exceeded on registering Shopee item. Saved locally.');
+    } else {
+      handleFirestoreError(error, OperationType.WRITE, `products/${SHOPEE_PRODUCT_FIO10.id}`);
+      throw error;
+    }
+  }
 };
 
-// Listen to products in real-time
+// Listen to products in real-time with local storage fallback
 export const subscribeToProducts = (onData: (products: Product[]) => void) => {
   const productsRef = collection(db, 'products');
 
-  // Seed default Shopee product if collection is empty
-  initializeProductsSeed().catch(() => {});
+  // Load cached products first for instant response
+  try {
+    const cached = localStorage.getItem(LOCAL_PRODUCTS_CACHE_KEY);
+    if (cached) {
+      const parsed = JSON.parse(cached);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        onData(parsed);
+      }
+    }
+  } catch (e) {}
 
   return onSnapshot(productsRef, (snapshot) => {
     if (snapshot.empty) {
@@ -110,49 +188,105 @@ export const subscribeToProducts = (onData: (products: Product[]) => void) => {
         reviews: Array.isArray(data.reviews) ? data.reviews : SHOPEE_PRODUCT_FIO10.reviews
       });
     });
+
+    // Save to local cache
+    try {
+      localStorage.setItem(LOCAL_PRODUCTS_CACHE_KEY, JSON.stringify(productsList));
+    } catch (e) {}
+
     onData(productsList);
   }, (error) => {
-    console.error('Error fetching real-time products:', error);
+    if (isQuotaError(error)) {
+      console.warn('Firestore daily read/write quota limit exceeded. Using local cached catalog.');
+    } else {
+      handleFirestoreError(error, OperationType.LIST, 'products');
+    }
+    // Fallback to cache or default product
+    try {
+      const cached = localStorage.getItem(LOCAL_PRODUCTS_CACHE_KEY);
+      if (cached) {
+        onData(JSON.parse(cached));
+        return;
+      }
+    } catch (e) {}
     onData([SHOPEE_PRODUCT_FIO10]);
   });
 };
 
-
 // Clear all products from Firestore
 export const clearAllProductsFromFirestore = async () => {
-  const productsRef = collection(db, 'products');
-  const snapshot = await getDocs(productsRef);
-  const deletePromises = snapshot.docs.map(docSnap => deleteDoc(doc(db, 'products', docSnap.id)));
-  await Promise.all(deletePromises);
+  try {
+    const productsRef = collection(db, 'products');
+    const snapshot = await getDocs(productsRef);
+    const deletePromises = snapshot.docs.map(docSnap => deleteDoc(doc(db, 'products', docSnap.id)));
+    await Promise.all(deletePromises);
+    localStorage.removeItem(LOCAL_PRODUCTS_CACHE_KEY);
+  } catch (error: any) {
+    if (isQuotaError(error)) {
+      localStorage.removeItem(LOCAL_PRODUCTS_CACHE_KEY);
+      throw new Error('A cota diária do banco de dados foi atingida. O catálogo foi limpo localmente.');
+    }
+    handleFirestoreError(error, OperationType.DELETE, 'products');
+    throw error;
+  }
 };
 
 // Admin operations
 export const addProductToFirestore = async (newProduct: Omit<Product, 'id'>) => {
-  const productsRef = collection(db, 'products');
-  const docRef = await addDoc(productsRef, {
-    ...newProduct,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString()
-  });
-  return docRef.id;
+  try {
+    const productsRef = collection(db, 'products');
+    const docRef = await addDoc(productsRef, {
+      ...newProduct,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    });
+    return docRef.id;
+  } catch (error: any) {
+    if (isQuotaError(error)) {
+      throw new Error('Cota diária de escrita do Firestore atingida. A cota será restaurada amanhã.');
+    }
+    handleFirestoreError(error, OperationType.CREATE, 'products');
+    throw error;
+  }
 };
 
 export const updateProductInFirestore = async (id: string, updates: Partial<Product>) => {
-  const docRef = doc(db, 'products', id);
-  await updateDoc(docRef, {
-    ...updates,
-    updatedAt: new Date().toISOString()
-  });
+  try {
+    const docRef = doc(db, 'products', id);
+    await updateDoc(docRef, {
+      ...updates,
+      updatedAt: new Date().toISOString()
+    });
+  } catch (error: any) {
+    if (isQuotaError(error)) {
+      throw new Error('Cota diária de escrita do Firestore atingida. A cota será restaurada amanhã.');
+    }
+    handleFirestoreError(error, OperationType.UPDATE, `products/${id}`);
+    throw error;
+  }
 };
 
 export const deleteProductFromFirestore = async (id: string) => {
-  const docRef = doc(db, 'products', id);
-  await deleteDoc(docRef);
+  try {
+    const docRef = doc(db, 'products', id);
+    await deleteDoc(docRef);
+  } catch (error: any) {
+    if (isQuotaError(error)) {
+      throw new Error('Cota diária de escrita do Firestore atingida. A cota será restaurada amanhã.');
+    }
+    handleFirestoreError(error, OperationType.DELETE, `products/${id}`);
+    throw error;
+  }
 };
 
-// User Shopping Cart Firestore Sync
+// User Shopping Cart Firestore Sync (debounced and safe)
+let lastCartPayload = '';
 export const saveUserCartToFirestore = async (userId: string, items: CartItem[]) => {
   if (!userId) return;
+  const payload = JSON.stringify(items || []);
+  if (payload === lastCartPayload) return; // Prevent unnecessary identical writes
+  lastCartPayload = payload;
+
   try {
     const cartDocRef = doc(db, 'carts', userId);
     await setDoc(cartDocRef, {
@@ -160,7 +294,11 @@ export const saveUserCartToFirestore = async (userId: string, items: CartItem[])
       updatedAt: new Date().toISOString()
     }, { merge: true });
   } catch (err) {
-    console.error('Error saving user cart to Firestore:', err);
+    if (isQuotaError(err)) {
+      // Silently store in localStorage
+      return;
+    }
+    console.warn('Firestore cart save notice:', err);
   }
 };
 
@@ -171,11 +309,14 @@ export const subscribeToUserCart = (userId: string, onData: (items: CartItem[]) 
     if (docSnap.exists()) {
       const data = docSnap.data();
       if (Array.isArray(data.items)) {
+        lastCartPayload = JSON.stringify(data.items);
         onData(data.items);
       }
     }
   }, (err) => {
-    console.error('Error subscribing to user cart:', err);
+    if (!isQuotaError(err)) {
+      console.warn('Cart subscription notice:', err);
+    }
   });
 };
 
@@ -183,9 +324,6 @@ const SESSION_KEY = 'mundo_pipa_user_session';
 let authStateListeners: ((user: UserProfile | null) => void)[] = [];
 
 const notifyAuthListeners = (user: UserProfile | null) => {
-  if (user && user.role === 'admin') {
-    initializeProductsSeed();
-  }
   authStateListeners.forEach(fn => fn(user));
 };
 
@@ -215,7 +353,9 @@ export const registerUser = async (email: string, pass: string, name: string) =>
   const finalRole: 'admin' | 'customer' = isEmailAdmin ? 'admin' : 'customer';
 
   const credential = await createUserWithEmailAndPassword(auth, email, pass);
-  await updateProfile(credential.user, { displayName: name });
+  try {
+    await updateProfile(credential.user, { displayName: name });
+  } catch {}
 
   const userProfile: UserProfile = {
     uid: credential.user.uid,
@@ -224,8 +364,12 @@ export const registerUser = async (email: string, pass: string, name: string) =>
     role: finalRole
   };
 
-  const userDocRef = doc(db, 'users', credential.user.uid);
-  await setDoc(userDocRef, userProfile);
+  try {
+    const userDocRef = doc(db, 'users', credential.user.uid);
+    await setDoc(userDocRef, userProfile);
+  } catch (e) {
+    console.warn('User profile stored locally (quota/offline fallback)');
+  }
   setStoredSession(userProfile);
 
   return userProfile;
@@ -233,12 +377,12 @@ export const registerUser = async (email: string, pass: string, name: string) =>
 
 export const loginUser = async (email: string, pass: string) => {
   const credential = await signInWithEmailAndPassword(auth, email, pass);
-  const userDocRef = doc(db, 'users', credential.user.uid);
-
-  let userRole: 'admin' | 'customer' = ADMIN_EMAILS.includes((credential.user.email || email).toLowerCase()) ? 'admin' : 'customer';
+  const isEmailAdmin = ADMIN_EMAILS.includes((credential.user.email || email).toLowerCase());
+  let userRole: 'admin' | 'customer' = isEmailAdmin ? 'admin' : 'customer';
   let userName = credential.user.displayName || (userRole === 'admin' ? 'Administrador' : 'Cliente');
 
   try {
+    const userDocRef = doc(db, 'users', credential.user.uid);
     const docSnap = await getDoc(userDocRef);
     if (docSnap.exists()) {
       const data = docSnap.data();
@@ -246,7 +390,7 @@ export const loginUser = async (email: string, pass: string) => {
       if (data.name) userName = data.name;
     }
   } catch (e) {
-    console.warn('Could not fetch user document:', e);
+    console.warn('Could not fetch user doc, using auth token info');
   }
 
   const userProfile: UserProfile = {
@@ -256,9 +400,7 @@ export const loginUser = async (email: string, pass: string) => {
     role: userRole
   };
 
-  await setDoc(userDocRef, userProfile, { merge: true });
   setStoredSession(userProfile);
-
   return userProfile;
 };
 
@@ -270,8 +412,8 @@ export const loginWithGoogle = async () => {
   let finalRole: 'admin' | 'customer' = isEmailAdmin ? 'admin' : 'customer';
   let userName = credential.user.displayName || 'Cliente Google';
 
-  const userDocRef = doc(db, 'users', credential.user.uid);
   try {
+    const userDocRef = doc(db, 'users', credential.user.uid);
     const docSnap = await getDoc(userDocRef);
     if (docSnap.exists()) {
       const data = docSnap.data();
@@ -279,7 +421,7 @@ export const loginWithGoogle = async () => {
       if (data.name) userName = data.name;
     }
   } catch (e) {
-    console.warn('Could not fetch user document:', e);
+    console.warn('Could not fetch Google user doc, using credentials');
   }
 
   const userProfile: UserProfile = {
@@ -289,9 +431,7 @@ export const loginWithGoogle = async () => {
     role: finalRole
   };
 
-  await setDoc(userDocRef, userProfile, { merge: true });
   setStoredSession(userProfile);
-
   return userProfile;
 };
 
@@ -314,7 +454,7 @@ export const listenAuthState = (onChange: (user: UserProfile | null) => void) =>
   const unsubscribeFirebase = onAuthStateChanged(auth, async (firebaseUser: FirebaseUser | null) => {
     if (firebaseUser) {
       const email = firebaseUser.email || '';
-      let isEmailAdmin = ADMIN_EMAILS.includes(email.toLowerCase());
+      const isEmailAdmin = ADMIN_EMAILS.includes(email.toLowerCase());
       let role: 'admin' | 'customer' = isEmailAdmin ? 'admin' : 'customer';
       let name = firebaseUser.displayName || (role === 'admin' ? 'Administrador' : 'Cliente');
 

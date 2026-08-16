@@ -3,6 +3,8 @@ import { ExternalLink, Tag, Truck, ShieldCheck, Heart, Sparkles, ShoppingBag } f
 import { SHOPEE_STORE_URL } from '../data/products';
 import logoImg from '../assets/images/logo.png';
 
+const FALLBACK_LOGO_URL = '/logo.png';
+
 export const ShopeeBanner: React.FC = () => {
   return (
     <div className="bg-gradient-to-r from-slate-950 via-slate-900 to-slate-950 text-white rounded-3xl p-6 sm:p-8 my-8 card-shadow relative overflow-hidden border-2 border-orange-500/60">
@@ -13,7 +15,18 @@ export const ShopeeBanner: React.FC = () => {
       <div className="relative z-10 flex flex-col lg:flex-row items-center justify-between gap-6">
         <div className="flex items-center gap-4">
           <div className="hidden sm:block w-20 h-20 shrink-0">
-            <img src={logoImg} alt="Mundo da Pipa Oficial" className="w-full h-full object-contain drop-shadow-md" referrerPolicy="no-referrer" />
+            <img
+              src={logoImg || FALLBACK_LOGO_URL}
+              onError={(e) => {
+                const target = e.currentTarget;
+                if (target.src !== window.location.origin + '/logo.png') {
+                  target.src = '/logo.png';
+                }
+              }}
+              alt="Mundo da Pipa Oficial"
+              className="w-full h-full object-contain drop-shadow-md"
+              referrerPolicy="no-referrer"
+            />
           </div>
 
           <div className="flex-1 text-center lg:text-left">

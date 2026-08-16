@@ -2,6 +2,8 @@ import React from 'react';
 import { Award, Heart, Sparkles, ShieldCheck, Flag } from 'lucide-react';
 import logoImg from '../assets/images/logo.png';
 
+const FALLBACK_LOGO_URL = '/logo.png';
+
 export const AboutSection: React.FC = () => {
   return (
     <section className="bg-slate-900 text-white py-16 sm:py-20 my-12 rounded-3xl relative overflow-hidden border border-slate-800 card-shadow">
@@ -17,7 +19,13 @@ export const AboutSection: React.FC = () => {
             <div className="relative mb-6">
               <div className="w-44 h-44 sm:w-52 sm:h-52 flex items-center justify-center hover:scale-105 transition-transform duration-500">
                 <img
-                  src={logoImg}
+                  src={logoImg || FALLBACK_LOGO_URL}
+                  onError={(e) => {
+                    const target = e.currentTarget;
+                    if (target.src !== window.location.origin + '/logo.png') {
+                      target.src = '/logo.png';
+                    }
+                  }}
                   alt="Mundo da Pipa Arte desde 1999"
                   className="w-full h-full object-contain drop-shadow-[0_15px_25px_rgba(245,158,11,0.25)]"
                   referrerPolicy="no-referrer"

@@ -5,6 +5,8 @@ import logoImg from '../assets/images/logo.png';
 import { SHOPEE_STORE_URL } from '../data/products';
 import { UserProfile } from '../lib/firebase';
 
+const FALLBACK_LOGO_URL = '/logo.png';
+
 interface HeaderProps {
   activeCategory: Category;
   onSelectCategory: (cat: Category) => void;
@@ -61,7 +63,13 @@ export const Header: React.FC<HeaderProps> = ({
           <div className="flex items-center gap-3 cursor-pointer group" onClick={() => onSelectCategory('todos')}>
             <div className="relative shrink-0 group-hover:scale-105 transition-transform duration-300">
               <img
-                src={logoImg}
+                src={logoImg || FALLBACK_LOGO_URL}
+                onError={(e) => {
+                  const target = e.currentTarget;
+                  if (target.src !== window.location.origin + '/logo.png') {
+                    target.src = '/logo.png';
+                  }
+                }}
                 alt="Logo Mundo da Pipa"
                 className="w-12 h-12 sm:w-14 sm:h-14 object-contain drop-shadow-sm"
                 referrerPolicy="no-referrer"

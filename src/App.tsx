@@ -120,7 +120,7 @@ export default function App() {
   }, []);
 
   // Real-time Firestore Cart Sync per User (or LocalStorage fallback for guests)
-  const isInitialUserSync = React.useRef(true);
+  const isFromRemote = React.useRef(false);
 
   useEffect(() => {
     if (!user?.uid) {
@@ -135,26 +135,23 @@ export default function App() {
     }
 
     // Logged-in mode: subscribe to user's cart in Firestore
-    isInitialUserSync.current = true;
     const unsubscribe = subscribeToUserCart(user.uid, (firestoreItems) => {
-      setCartItems((currentItems) => {
-        if (firestoreItems && firestoreItems.length > 0) {
-          return firestoreItems;
-        }
-        if (isInitialUserSync.current && currentItems.length > 0) {
-          saveUserCartToFirestore(user.uid, currentItems);
-          return currentItems;
-        }
-        return firestoreItems || [];
-      });
-      isInitialUserSync.current = false;
+      if (firestoreItems) {
+        isFromRemote.current = true;
+        setCartItems(firestoreItems);
+      }
     });
 
     return () => unsubscribe();
   }, [user?.uid]);
 
-  // Save cart changes to Firestore (if logged in) and localStorage
+  // Save cart changes to Firestore (if logged in and triggered by local action) and localStorage
   useEffect(() => {
+    if (isFromRemote.current) {
+      isFromRemote.current = false;
+      return;
+    }
+
     if (user?.uid) {
       saveUserCartToFirestore(user.uid, cartItems);
       try {

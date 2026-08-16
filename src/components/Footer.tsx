@@ -3,6 +3,8 @@ import { Heart, ExternalLink, MessageCircle, Instagram, ShieldCheck, Sparkles, M
 import logoImg from '../assets/images/logo.png';
 import { SHOPEE_STORE_URL, WHATSAPP_NUMBER } from '../data/products';
 
+const FALLBACK_LOGO_URL = '/logo.png';
+
 export const Footer: React.FC = () => {
   return (
     <footer className="bg-slate-950 text-slate-400 border-t border-slate-800 pt-12 pb-8">
@@ -15,7 +17,13 @@ export const Footer: React.FC = () => {
             <div className="flex items-center gap-3 mb-4">
               <div className="w-14 h-14 shrink-0">
                 <img
-                  src={logoImg}
+                  src={logoImg || FALLBACK_LOGO_URL}
+                  onError={(e) => {
+                    const target = e.currentTarget;
+                    if (target.src !== window.location.origin + '/logo.png') {
+                      target.src = '/logo.png';
+                    }
+                  }}
                   alt="Mundo da Pipa"
                   className="w-full h-full object-contain drop-shadow-md"
                   referrerPolicy="no-referrer"

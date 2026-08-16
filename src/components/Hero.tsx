@@ -1,7 +1,9 @@
 import React from 'react';
 import { ShoppingBag, Award, Star, ExternalLink, ShieldCheck, Sparkles, MessageCircle, Instagram } from 'lucide-react';
-import logoImg from '../src/assets/images/logo.png';
+import logoImg from '../assets/images/logo.png';
 import { SHOPEE_STORE_URL, WHATSAPP_NUMBER } from '../data/products';
+
+const FALLBACK_LOGO_URL = '/logo.png';
 
 interface HeroProps {
   onExploreClick: () => void;
@@ -21,7 +23,13 @@ export const Hero: React.FC<HeroProps> = ({ onExploreClick }) => {
         <div className="relative mb-6 group">
           <div className="w-48 h-48 sm:w-60 sm:h-60 md:w-72 md:h-72 flex items-center justify-center transition-transform duration-300 group-hover:scale-105">
             <img
-              src={logoImg}
+              src={logoImg || FALLBACK_LOGO_URL}
+              onError={(e) => {
+                const target = e.currentTarget;
+                if (target.src !== window.location.origin + '/logo.png') {
+                  target.src = '/logo.png';
+                }
+              }}
               alt="Logo Oficial Mundo da Pipa"
               className="w-full h-full object-contain drop-shadow-[0_15px_25px_rgba(245,158,11,0.2)]"
               referrerPolicy="no-referrer"
