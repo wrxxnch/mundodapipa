@@ -48,6 +48,13 @@ const ADMIN_EMAILS = [
 ];
 
 const LOCAL_PRODUCTS_CACHE_KEY = 'mundo_pipa_products_cache';
+let isFirestoreQuotaExhausted = false;
+
+const handleQuotaExhausted = (err: any) => {
+  if (err?.code === 'resource-exhausted' || err?.message?.includes('resource-exhausted') || err?.message?.includes('Quota limit exceeded')) {
+    isFirestoreQuotaExhausted = true;
+  }
+};
 
 // Local product storage helper
 const getLocalProducts = (): Product[] => {
@@ -268,7 +275,8 @@ export const addProductToFirestore = async (newProduct: Partial<Product> | Recor
     videos: Array.isArray(newProduct.videos) ? newProduct.videos : undefined,
     description: newProduct.description || '',
     specs: Array.isArray(newProduct.specs) ? newProduct.specs : [],
-    inStock: newProduct.inStock !== false,
+    inStock: newProduct.inStock !== false && (newProduct.stockQuantity === undefined || Number(newProduct.stockQuantity) > 0),
+    stockQuantity: newProduct.stockQuantity != null && !isNaN(Number(newProduct.stockQuantity)) ? Number(newProduct.stockQuantity) : undefined,
     shopeeUrl: newProduct.shopeeUrl || 'https://shopee.com.br/mundo_da_pipa',
     badge: newProduct.badge || undefined,
     rating: Number(newProduct.rating) || 5.0,
@@ -281,19 +289,22 @@ export const addProductToFirestore = async (newProduct: Partial<Product> | Recor
   const updatedList = [productToSave, ...currentList];
   setLocalProducts(updatedList);
 
-  // 2. Try Firestore write
-  try {
-    const productsRef = collection(db, 'products');
-    const docRef = doc(productsRef, newId);
-    const sanitized = cleanFirestoreData({
-      ...newProduct,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
-    });
-    await setDoc(docRef, sanitized);
-  } catch (err: any) {
-    if (err?.code !== 'resource-exhausted') {
-      console.warn('Firestore add product notice:', err?.message || err);
+  // 2. Try Firestore write if quota not exceeded
+  if (!isFirestoreQuotaExhausted) {
+    try {
+      const productsRef = collection(db, 'products');
+      const docRef = doc(productsRef, newId);
+      const sanitized = cleanFirestoreData({
+        ...newProduct,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      });
+      await setDoc(docRef, sanitized);
+    } catch (err: any) {
+      handleQuotaExhausted(err);
+      if (err?.code !== 'resource-exhausted') {
+        console.warn('Firestore add product notice:', err?.message || err);
+      }
     }
   }
 
@@ -316,17 +327,20 @@ export const updateProductInFirestore = async (id: string, updates: Record<strin
     setLocalProducts([...currentList]);
   }
 
-  // 2. Try Firestore update
-  try {
-    const docRef = doc(db, 'products', id);
-    const sanitized = cleanFirestoreData({
-      ...updates,
-      updatedAt: new Date().toISOString()
-    });
-    await setDoc(docRef, sanitized, { merge: true });
-  } catch (err: any) {
-    if (err?.code !== 'resource-exhausted') {
-      console.warn('Firestore update product notice:', err?.message || err);
+  // 2. Try Firestore update if quota not exceeded
+  if (!isFirestoreQuotaExhausted) {
+    try {
+      const docRef = doc(db, 'products', id);
+      const sanitized = cleanFirestoreData({
+        ...updates,
+        updatedAt: new Date().toISOString()
+      });
+      await setDoc(docRef, sanitized, { merge: true });
+    } catch (err: any) {
+      handleQuotaExhausted(err);
+      if (err?.code !== 'resource-exhausted') {
+        console.warn('Firestore update product notice:', err?.message || err);
+      }
     }
   }
 };
@@ -337,20 +351,23 @@ export const deleteProductFromFirestore = async (id: string) => {
   const filtered = currentList.filter(p => p.id !== id);
   setLocalProducts(filtered);
 
-  // 2. Try Firestore delete
-  try {
-    const docRef = doc(db, 'products', id);
-    await deleteDoc(docRef);
-  } catch (err: any) {
-    if (err?.code !== 'resource-exhausted') {
-      console.warn('Firestore delete product notice:', err?.message || err);
+  // 2. Try Firestore delete if quota not exceeded
+  if (!isFirestoreQuotaExhausted) {
+    try {
+      const docRef = doc(db, 'products', id);
+      await deleteDoc(docRef);
+    } catch (err: any) {
+      handleQuotaExhausted(err);
+      if (err?.code !== 'resource-exhausted') {
+        console.warn('Firestore delete product notice:', err?.message || err);
+      }
     }
   }
 };
 
 // User Shopping Cart Sync
 export const saveUserCartToFirestore = async (userId: string, items: CartItem[]) => {
-  if (!userId) return;
+  if (!userId || isFirestoreQuotaExhausted) return;
   try {
     const cartDocRef = doc(db, 'carts', userId);
     await setDoc(cartDocRef, {
@@ -358,7 +375,7 @@ export const saveUserCartToFirestore = async (userId: string, items: CartItem[])
       updatedAt: new Date().toISOString()
     }, { merge: true });
   } catch (err: any) {
-    // Gracefully ignore quota on cart sync
+    handleQuotaExhausted(err);
   }
 };
 
@@ -561,4 +578,99 @@ export const listenAuthState = (onChange: (user: UserProfile | null) => void) =>
       unsubscribeFirebase();
     } catch {}
   };
+};
+
+export interface StoryContent {
+  badge: string;
+  title: string;
+  paragraph1: string;
+  paragraph2: string;
+  stat1Value: string;
+  stat1Label: string;
+  stat2Value: string;
+  stat2Label: string;
+  value1Title: string;
+  value1Desc: string;
+  value2Title: string;
+  value2Desc: string;
+  value3Title: string;
+  value3Desc: string;
+}
+
+export const DEFAULT_STORY_CONTENT: StoryContent = {
+  badge: 'Nossa Arte e Compromisso',
+  title: 'A Arte e a Paixão das Pipas no Sangue',
+  paragraph1: 'Fundado em 1999, o Mundo da Pipa nasceu do amor pela tradição brasileira do festival de pipas e raias. O que começou como uma produção artesanal de bairro transformou-se em referência nacional de qualidade em armações, papel de seda e linhas.',
+  paragraph2: 'Cada pipa produzida carrega um rigoroso processo de seleção: varetas de bambu alinhadas e tratadas contra umidade, curvatura testada e papéis com estampas vibrantes e cortes de precisão para garantir um vôo estável e ágil.',
+  stat1Value: '25+',
+  stat1Label: 'Anos de Paixão',
+  stat2Value: '100k+',
+  stat2Label: 'Pipas Produzidas',
+  value1Title: 'Bambu & Fibra Selecionados',
+  value1Desc: 'Matéria-prima de alta flexibilidade para excelente aerodinâmica e durabilidade no céu.',
+  value2Title: 'Feito por Apaixonados por Pipas',
+  value2Desc: 'Respeito total aos praticantes, garantindo pipas calibradas prontas para o alto.',
+  value3Title: 'Entrega Nacional com Segurança',
+  value3Desc: 'Embalagens reforçadas para que suas pipas cheguem perfeitamente intactas.'
+};
+
+const LOCAL_STORY_KEY = 'mundo_pipa_story_content';
+
+export const getStoryContent = (): StoryContent => {
+  try {
+    const raw = localStorage.getItem(LOCAL_STORY_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      return { ...DEFAULT_STORY_CONTENT, ...parsed };
+    }
+  } catch {}
+  return DEFAULT_STORY_CONTENT;
+};
+
+export const saveStoryContent = async (content: StoryContent) => {
+  try {
+    localStorage.setItem(LOCAL_STORY_KEY, JSON.stringify(content));
+  } catch {}
+
+  if (!isFirestoreQuotaExhausted) {
+    try {
+      const storyRef = doc(db, 'site_content', 'about_history');
+      await setDoc(storyRef, {
+        ...cleanFirestoreData(content),
+        updatedAt: new Date().toISOString()
+      }, { merge: true });
+    } catch (err: any) {
+      handleQuotaExhausted(err);
+    }
+  }
+};
+
+export const subscribeToStoryContent = (onData: (content: StoryContent) => void) => {
+  // Return local storage data immediately
+  const initial = getStoryContent();
+  onData(initial);
+
+  if (isFirestoreQuotaExhausted) return () => {};
+
+  try {
+    const storyRef = doc(db, 'site_content', 'about_history');
+    return onSnapshot(
+      storyRef,
+      (docSnap) => {
+        if (docSnap.exists()) {
+          const data = docSnap.data();
+          const merged = { ...DEFAULT_STORY_CONTENT, ...data };
+          try {
+            localStorage.setItem(LOCAL_STORY_KEY, JSON.stringify(merged));
+          } catch {}
+          onData(merged);
+        }
+      },
+      (err) => {
+        handleQuotaExhausted(err);
+      }
+    );
+  } catch {
+    return () => {};
+  }
 };

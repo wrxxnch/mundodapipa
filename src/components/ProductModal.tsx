@@ -146,6 +146,25 @@ export const ProductModal: React.FC<ProductModalProps> = ({
                 )}
               </div>
 
+              {/* Stock Status Badge */}
+              <div className="mt-2.5 flex items-center gap-2">
+                {product.inStock === false || (product.stockQuantity !== undefined && product.stockQuantity <= 0) ? (
+                  <span className="inline-flex items-center gap-1 bg-red-100 text-red-700 text-[11px] font-black px-2.5 py-0.5 rounded-md uppercase tracking-wider">
+                    Esgotado
+                  </span>
+                ) : product.stockQuantity !== undefined ? (
+                  <span className="inline-flex items-center gap-1 bg-emerald-50 text-emerald-700 border border-emerald-200 text-[11px] font-bold px-2.5 py-0.5 rounded-md">
+                    <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block animate-pulse"></span>
+                    <span>{product.stockQuantity} un. disponíveis em estoque</span>
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1 bg-emerald-50 text-emerald-700 text-[11px] font-bold px-2.5 py-0.5 rounded-md">
+                    <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block"></span>
+                    <span>Em Estoque</span>
+                  </span>
+                )}
+              </div>
+
               <p className="text-slate-600 text-sm mt-3 leading-relaxed">
                 {product.description}
               </p>

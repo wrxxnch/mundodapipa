@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { X, DollarSign, Check, Trash2 } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { X, DollarSign, Check, Trash2, Package } from 'lucide-react';
 import { Product } from '../types';
 import { updateProductInFirestore, deleteProductFromFirestore, deleteField } from '../lib/firebase';
 
@@ -14,13 +14,30 @@ export const EditPriceModal: React.FC<EditPriceModalProps> = ({
   isOpen,
   onClose
 }) => {
-  if (!isOpen || !product) return null;
-
-  const [price, setPrice] = useState(product.price.toString());
-  const [originalPrice, setOriginalPrice] = useState(product.originalPrice ? product.originalPrice.toString() : '');
-  const [salesCount, setSalesCount] = useState(product.salesCount != null ? product.salesCount.toString() : '');
+  const [price, setPrice] = useState('');
+  const [originalPrice, setOriginalPrice] = useState('');
+  const [salesCount, setSalesCount] = useState('');
+  const [stockQuantity, setStockQuantity] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (product) {
+      setPrice(product.price != null ? product.price.toString() : '');
+      setOriginalPrice(product.originalPrice != null ? product.originalPrice.toString() : '');
+      setSalesCount(product.salesCount != null ? product.salesCount.toString() : '');
+      setStockQuantity(product.stockQuantity != null ? product.stockQuantity.toString() : '');
+      setError(null);
+    } else {
+      setPrice('');
+      setOriginalPrice('');
+      setSalesCount('');
+      setStockQuantity('');
+      setError(null);
+    }
+  }, [product, isOpen]);
+
+  if (!isOpen || !product) return null;
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -40,6 +57,10 @@ export const EditPriceModal: React.FC<EditPriceModalProps> = ({
       ? parseInt(salesCount.trim(), 10)
       : null;
 
+    const numStock = stockQuantity.trim() && !isNaN(parseInt(stockQuantity.trim(), 10)) && parseInt(stockQuantity.trim(), 10) >= 0
+      ? parseInt(stockQuantity.trim(), 10)
+      : null;
+
     setLoading(true);
 
     try {
@@ -56,12 +77,17 @@ export const EditPriceModal: React.FC<EditPriceModalProps> = ({
       } else {
         updates.salesCount = deleteField();
       }
+      if (numStock !== null) {
+        updates.stockQuantity = numStock;
+        updates.inStock = numStock > 0;
+      } else {
+        updates.stockQuantity = deleteField();
+      }
 
-      await updateProductInFirestore(product.id, updates);
+      updateProductInFirestore(product.id, updates).catch(e => console.warn('Background sync:', e));
       onClose();
     } catch (err: any) {
       setError('Erro ao atualizar dados: ' + err.message);
-    } finally {
       setLoading(false);
     }
   };
@@ -95,7 +121,7 @@ export const EditPriceModal: React.FC<EditPriceModalProps> = ({
             <DollarSign className="w-4 h-4" />
           </div>
           <div>
-            <span className="text-[10px] font-black uppercase tracking-widest text-orange-600 block">Editar Preço (Admin)</span>
+            <span className="text-[10px] font-black uppercase tracking-widest text-orange-600 block">Editar Preço & Estoque</span>
             <h3 className="text-base font-black text-slate-900 leading-tight line-clamp-1">{product.name}</h3>
           </div>
         </div>
@@ -114,7 +140,7 @@ export const EditPriceModal: React.FC<EditPriceModalProps> = ({
               <input
                 type="text"
                 required
-                value={price}
+                value={price ?? ''}
                 onChange={(e) => setPrice(e.target.value)}
                 placeholder="24.90"
                 className="w-full bg-slate-50 border border-slate-300 rounded-xl pl-9 pr-3 py-2 text-base font-black text-slate-900 focus:outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20"
@@ -122,15 +148,32 @@ export const EditPriceModal: React.FC<EditPriceModalProps> = ({
             </div>
           </div>
 
-          <div>
-            <label className="block text-xs font-extrabold uppercase text-slate-500 mb-1">Preço Antigo / De (R$)</label>
-            <input
-              type="text"
-              value={originalPrice}
-              onChange={(e) => setOriginalPrice(e.target.value)}
-              placeholder="Ex: 29.90 (opcional)"
-              className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-600 focus:outline-none focus:border-orange-500"
-            />
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="block text-[11px] font-extrabold uppercase text-slate-500 mb-1">Preço Antigo (De)</label>
+              <input
+                type="text"
+                value={originalPrice ?? ''}
+                onChange={(e) => setOriginalPrice(e.target.value)}
+                placeholder="29.90"
+                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-600 focus:outline-none focus:border-orange-500"
+              />
+            </div>
+
+            <div>
+              <label className="block text-[11px] font-black uppercase text-orange-700 mb-1 flex items-center gap-1">
+                <Package className="w-3 h-3 text-orange-600" />
+                <span>Qtd. Estoque</span>
+              </label>
+              <input
+                type="number"
+                min="0"
+                value={stockQuantity ?? ''}
+                onChange={(e) => setStockQuantity(e.target.value)}
+                placeholder="50"
+                className="w-full bg-slate-50 border border-orange-300 rounded-xl px-3 py-2 text-xs font-black text-orange-700 focus:outline-none focus:border-orange-500"
+              />
+            </div>
           </div>
 
           <div>
@@ -138,7 +181,7 @@ export const EditPriceModal: React.FC<EditPriceModalProps> = ({
             <input
               type="number"
               min="0"
-              value={salesCount}
+              value={salesCount ?? ''}
               onChange={(e) => setSalesCount(e.target.value)}
               placeholder="Ex: 120 (deixe em branco se novo)"
               className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-700 focus:outline-none focus:border-orange-500"

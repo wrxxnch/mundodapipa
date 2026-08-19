@@ -136,6 +136,17 @@ export const ProductCard: React.FC<ProductCardProps> = ({
             {product.name}
           </h3>
 
+          {/* Stock info indicator */}
+          {product.inStock === false || (product.stockQuantity !== undefined && product.stockQuantity <= 0) ? (
+            <span className="inline-block mt-1 bg-red-100 text-red-700 text-[10px] font-black px-2 py-0.5 rounded uppercase tracking-wider">
+              Esgotado
+            </span>
+          ) : product.stockQuantity !== undefined ? (
+            <span className="inline-block mt-1 text-[10px] font-bold text-slate-500 bg-slate-50 border border-slate-200 px-1.5 py-0.5 rounded">
+              Estoque: <strong className="text-slate-900">{product.stockQuantity} un.</strong>
+            </span>
+          ) : null}
+
           <p className="text-slate-500 text-xs mt-1.5 line-clamp-2">
             {product.description}
           </p>

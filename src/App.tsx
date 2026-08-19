@@ -417,7 +417,7 @@ export default function App() {
 
         {/* Brand History Section */}
         <div id="historia">
-          <AboutSection />
+          <AboutSection isAdmin={user?.role === 'admin'} />
         </div>
 
         {/* Customer Reviews Section */}

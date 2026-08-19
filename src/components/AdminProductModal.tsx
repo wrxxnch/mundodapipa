@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { 
   X, Plus, Save, Image as ImageIcon, Tag, DollarSign, 
   Trash2, Upload, Camera, Link as LinkIcon, CheckCircle2, 
-  Sparkles, Video, AlertCircle, Youtube, ExternalLink 
+  Sparkles, Video, AlertCircle, Youtube, ExternalLink, Package 
 } from 'lucide-react';
 import { Product, Category } from '../types';
 import { addProductToFirestore, updateProductInFirestore, deleteProductFromFirestore, deleteField } from '../lib/firebase';
@@ -37,6 +37,7 @@ export const AdminProductModal: React.FC<AdminProductModalProps> = ({
   const [specs, setSpecs] = useState<string[]>([]);
   const [badge, setBadge] = useState('');
   const [inStock, setInStock] = useState(true);
+  const [stockQuantity, setStockQuantity] = useState<string>('');
   const [shopeeUrl, setShopeeUrl] = useState('https://shopee.com.br/mundo_da_pipa');
 
   const [loading, setLoading] = useState(false);
@@ -65,6 +66,7 @@ export const AdminProductModal: React.FC<AdminProductModalProps> = ({
       setSpecs(productToEdit.specs || []);
       setBadge(productToEdit.badge || '');
       setInStock(productToEdit.inStock !== false);
+      setStockQuantity(productToEdit.stockQuantity != null ? productToEdit.stockQuantity.toString() : '');
       setShopeeUrl(productToEdit.shopeeUrl || 'https://shopee.com.br/mundo_da_pipa');
       setFileName(null);
       setVideoFileName(productToEdit.videoUrl?.startsWith('local-video://') ? 'Vídeo do produto carregado' : null);
@@ -87,6 +89,7 @@ export const AdminProductModal: React.FC<AdminProductModalProps> = ({
       setSpecs(['Bambu selecionado', 'Papel de seda de alta qualidade']);
       setBadge('Novo');
       setInStock(true);
+      setStockQuantity('50');
       setShopeeUrl('https://shopee.com.br/mundo_da_pipa');
     }
   }, [productToEdit, isOpen]);
@@ -208,11 +211,17 @@ export const AdminProductModal: React.FC<AdminProductModalProps> = ({
       ? parseInt(salesCount.trim(), 10)
       : undefined;
 
+    const numStockQty = stockQuantity.trim() && !isNaN(parseInt(stockQuantity.trim(), 10)) && parseInt(stockQuantity.trim(), 10) >= 0
+      ? parseInt(stockQuantity.trim(), 10)
+      : undefined;
+
     setLoading(true);
 
     try {
       const cover = image.trim() || (images.length > 0 ? images[0] : 'https://images.unsplash.com/photo-1534447677768-be436bb09401?auto=format&fit=crop&w=600&q=80');
       const allImages = images.length > 0 ? images : [cover];
+
+      const computedInStock = numStockQty !== undefined ? numStockQty > 0 && inStock : inStock;
 
       const productData: Record<string, any> = {
         name: name.trim(),
@@ -222,10 +231,16 @@ export const AdminProductModal: React.FC<AdminProductModalProps> = ({
         images: allImages,
         description: description.trim(),
         specs: specs.filter(s => s && s.trim().length > 0),
-        inStock,
+        inStock: computedInStock,
         shopeeUrl: shopeeUrl.trim() || 'https://shopee.com.br/mundo_da_pipa',
         rating: productToEdit ? productToEdit.rating : 5.0
       };
+
+      if (numStockQty !== undefined) {
+        productData.stockQuantity = numStockQty;
+      } else if (productToEdit) {
+        productData.stockQuantity = deleteField();
+      }
 
       if (numOrigPrice !== undefined) {
         productData.originalPrice = numOrigPrice;
@@ -252,16 +267,18 @@ export const AdminProductModal: React.FC<AdminProductModalProps> = ({
       }
 
       if (productToEdit) {
-        await updateProductInFirestore(productToEdit.id, productData);
+        // Instant local update + non-blocking cloud sync
+        updateProductInFirestore(productToEdit.id, productData).catch(e => console.warn('Background sync:', e));
       } else {
-        await addProductToFirestore(productData);
+        // Instant local add + non-blocking cloud sync
+        addProductToFirestore(productData).catch(e => console.warn('Background sync:', e));
       }
 
+      // Close modal immediately
       onClose();
     } catch (err: any) {
       console.error('Error saving product:', err);
       setError('Erro ao salvar produto: ' + (err.message || 'Tente novamente'));
-    } finally {
       setLoading(false);
     }
   };
@@ -346,8 +363,8 @@ export const AdminProductModal: React.FC<AdminProductModalProps> = ({
             </div>
           </div>
 
-          {/* Pricing & Sales Row */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 bg-slate-50 p-4 rounded-2xl border border-slate-200">
+          {/* Pricing & Sales & Stock Row */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 bg-slate-50 p-4 rounded-2xl border border-slate-200">
             <div>
               <label className="block text-xs font-black uppercase text-emerald-700 mb-1">Preço Atual (R$)</label>
               <div className="relative">
@@ -375,7 +392,29 @@ export const AdminProductModal: React.FC<AdminProductModalProps> = ({
             </div>
 
             <div>
-              <label className="block text-xs font-black uppercase text-slate-700 mb-1">Qtd. Vendidos (Opcional)</label>
+              <label className="block text-xs font-black uppercase text-orange-700 mb-1 flex items-center gap-1">
+                <Package className="w-3.5 h-3.5 text-orange-600" />
+                <span>Qtd. em Estoque</span>
+              </label>
+              <input
+                type="number"
+                min="0"
+                value={stockQuantity}
+                onChange={(e) => {
+                  setStockQuantity(e.target.value);
+                  if (e.target.value === '0') {
+                    setInStock(false);
+                  } else if (Number(e.target.value) > 0) {
+                    setInStock(true);
+                  }
+                }}
+                placeholder="Ex: 50"
+                className="w-full bg-white border border-orange-300 rounded-xl px-3 py-2 text-sm font-black text-orange-700 focus:outline-none focus:ring-2 focus:ring-orange-500/20"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-black uppercase text-slate-700 mb-1">Qtd. Vendidos</label>
               <input
                 type="number"
                 min="0"

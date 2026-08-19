@@ -26,6 +26,7 @@ export interface Product {
   description: string;
   specs: string[];
   inStock: boolean;
+  stockQuantity?: number;
   shopeeUrl: string;
   badge?: string;
   rating: number;

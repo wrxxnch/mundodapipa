@@ -15,7 +15,7 @@ export const Hero: React.FC<HeroProps> = ({ onExploreClick }) => {
       <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-orange-600/10 rounded-full blur-3xl pointer-events-none"></div>
       <div className="absolute top-0 right-0 w-80 h-80 bg-sky-500/10 rounded-full blur-3xl pointer-events-none"></div>
 
-      <div className="relative z-10 max-w-4xl mx-auto flex flex-col items-center">
+      <div className="relative z-10 max-w-4xl mx-auto flex flex-col items-center w-full">
         
         {/* Official Logo Showcase */}
         <div className="relative mb-6 group">
@@ -55,25 +55,15 @@ export const Hero: React.FC<HeroProps> = ({ onExploreClick }) => {
           <span>★ ATACADO & VAREJO PARA TODO O BRASIL ★</span>
         </div>
 
-        {/* Main CTAs */}
-        <div className="flex flex-col sm:flex-row items-center gap-3.5 w-full sm:w-auto mt-2">
+        {/* Action Controls */}
+        <div className="flex flex-col sm:flex-row items-center gap-3.5 w-full sm:w-auto mt-4">
           <button
             onClick={onExploreClick}
             className="w-full sm:w-auto bg-emerald-600 hover:bg-emerald-500 text-white font-black text-base px-8 py-3.5 rounded-2xl shadow-xl uppercase tracking-wider transition-all transform hover:-translate-y-0.5 active:translate-y-0 flex items-center justify-center gap-2"
           >
             <ShoppingBag className="w-5 h-5 text-amber-300" />
-            <span>Ver Catálogo</span>
+            <span>Ver Catálogo Completo</span>
           </button>
-
-          <a
-            href={SHOPEE_STORE_URL}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="w-full sm:w-auto bg-orange-600 hover:bg-orange-500 text-white font-black text-base px-8 py-3.5 rounded-2xl shadow-xl uppercase tracking-wider transition-all transform hover:-translate-y-0.5 active:translate-y-0 border border-orange-400/50 flex items-center justify-center gap-2"
-          >
-            <span>Loja Oficial Shopee</span>
-            <ExternalLink className="w-4 h-4" />
-          </a>
 
           <a
             href={`https://wa.me/${WHATSAPP_NUMBER}`}
@@ -82,7 +72,7 @@ export const Hero: React.FC<HeroProps> = ({ onExploreClick }) => {
             className="w-full sm:w-auto bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-100 px-7 py-3.5 rounded-2xl font-black text-base shadow-xl uppercase tracking-wider transition-all transform hover:-translate-y-0.5 active:translate-y-0 flex items-center justify-center gap-2"
           >
             <MessageCircle className="w-5 h-5 text-emerald-400" />
-            <span>(31) 98437-4513</span>
+            <span>WhatsApp (31) 98437-4513</span>
           </a>
         </div>
 
