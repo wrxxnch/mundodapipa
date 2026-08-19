@@ -217,22 +217,23 @@ export const AdminProductModal: React.FC<AdminProductModalProps> = ({
       const cover = image.trim() || (images.length > 0 ? images[0] : 'https://images.unsplash.com/photo-1534447677768-be436bb09401?auto=format&fit=crop&w=600&q=80');
       const allImages = images.length > 0 ? images : [cover];
 
-      const productData = {
+      const productData: any = {
         name: name.trim(),
         category,
         price: numPrice,
-        originalPrice: numOrigPrice,
         image: cover,
         images: allImages,
-        videoUrl: videoUrl.trim() || undefined,
         description: description.trim(),
         specs,
         inStock,
         shopeeUrl: shopeeUrl.trim() || 'https://shopee.com.br/mundo_da_pipa',
-        badge: badge.trim() || undefined,
-        rating: productToEdit ? productToEdit.rating : 5.0,
-        salesCount: numSalesCount
+        rating: productToEdit ? productToEdit.rating : 5.0
       };
+
+      if (numOrigPrice !== undefined) productData.originalPrice = numOrigPrice;
+      if (videoUrl.trim()) productData.videoUrl = videoUrl.trim();
+      if (badge.trim()) productData.badge = badge.trim();
+      if (numSalesCount !== undefined) productData.salesCount = numSalesCount;
 
       if (productToEdit) {
         await updateProductInFirestore(productToEdit.id, productData);

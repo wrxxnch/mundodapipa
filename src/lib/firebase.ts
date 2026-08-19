@@ -126,23 +126,41 @@ export const clearAllProductsFromFirestore = async () => {
   await Promise.all(deletePromises);
 };
 
+// Utility to strip all undefined fields for Firestore safety
+export const cleanFirestoreData = <T extends Record<string, any>>(obj: T): Partial<T> => {
+  const cleaned: Record<string, any> = {};
+  Object.keys(obj).forEach((key) => {
+    const val = obj[key];
+    if (val !== undefined) {
+      if (val !== null && typeof val === 'object' && !Array.isArray(val) && !(val instanceof Date)) {
+        cleaned[key] = cleanFirestoreData(val);
+      } else {
+        cleaned[key] = val;
+      }
+    }
+  });
+  return cleaned as Partial<T>;
+};
+
 // Admin operations
 export const addProductToFirestore = async (newProduct: Omit<Product, 'id'>) => {
   const productsRef = collection(db, 'products');
-  const docRef = await addDoc(productsRef, {
+  const sanitized = cleanFirestoreData({
     ...newProduct,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString()
   });
+  const docRef = await addDoc(productsRef, sanitized);
   return docRef.id;
 };
 
 export const updateProductInFirestore = async (id: string, updates: Partial<Product>) => {
   const docRef = doc(db, 'products', id);
-  await updateDoc(docRef, {
+  const sanitized = cleanFirestoreData({
     ...updates,
     updatedAt: new Date().toISOString()
   });
+  await updateDoc(docRef, sanitized);
 };
 
 export const deleteProductFromFirestore = async (id: string) => {
