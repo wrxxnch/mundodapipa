@@ -3,6 +3,7 @@ import { X, Star, ShoppingCart, ExternalLink, Check, ShieldCheck, Truck, Sparkle
 import { Product } from '../types';
 import { ShippingCalculator } from './ShippingCalculator';
 import { FastImage } from './FastImage';
+import { SmartVideoPlayer } from './SmartVideoPlayer';
 
 interface ProductModalProps {
   product: Product | null;
@@ -88,16 +89,7 @@ export const ProductModal: React.FC<ProductModalProps> = ({
                 />
               ) : videoUrl ? (
                 <div className="w-full h-full rounded-xl overflow-hidden shadow-inner bg-black flex items-center justify-center">
-                  <video
-                    src={videoUrl}
-                    controls
-                    autoPlay
-                    playsInline
-                    preload="metadata"
-                    className="w-full h-full object-contain"
-                  >
-                    Seu navegador não suporta reprodução de vídeo.
-                  </video>
+                  <SmartVideoPlayer url={videoUrl} autoPlay />
                 </div>
               ) : null}
 

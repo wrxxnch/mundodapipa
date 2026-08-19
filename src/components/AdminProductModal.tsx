@@ -1,8 +1,14 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { X, Plus, Save, Image as ImageIcon, Tag, DollarSign, PackageCheck, Trash2, Upload, Camera, Link as LinkIcon, CheckCircle2, Sparkles, Video } from 'lucide-react';
+import { 
+  X, Plus, Save, Image as ImageIcon, Tag, DollarSign, 
+  Trash2, Upload, Camera, Link as LinkIcon, CheckCircle2, 
+  Sparkles, Video, AlertCircle, Youtube, ExternalLink 
+} from 'lucide-react';
 import { Product, Category } from '../types';
 import { addProductToFirestore, updateProductInFirestore, deleteProductFromFirestore } from '../lib/firebase';
 import { compressImageFile } from '../utils/imageCompressor';
+import { saveLocalVideo } from '../utils/mediaStore';
+import { SmartVideoPlayer } from './SmartVideoPlayer';
 
 interface AdminProductModalProps {
   isOpen: boolean;
@@ -37,6 +43,8 @@ export const AdminProductModal: React.FC<AdminProductModalProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [videoSource, setVideoSource] = useState<'device' | 'url'>('device');
   const [videoFileName, setVideoFileName] = useState<string | null>(null);
+  const [isCompressingExtra, setIsCompressingExtra] = useState(false);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
   const extraFileInputRef = useRef<HTMLInputElement>(null);
   const videoFileInputRef = useRef<HTMLInputElement>(null);
@@ -52,11 +60,14 @@ export const AdminProductModal: React.FC<AdminProductModalProps> = ({
       setImages(productToEdit.images || [productToEdit.image]);
       setVideoUrl(productToEdit.videoUrl || '');
       setUploadSource('url');
+      setVideoSource(productToEdit.videoUrl?.startsWith('local-video://') ? 'device' : 'url');
       setDescription(productToEdit.description);
       setSpecs(productToEdit.specs || []);
       setBadge(productToEdit.badge || '');
       setInStock(productToEdit.inStock !== false);
       setShopeeUrl(productToEdit.shopeeUrl || 'https://shopee.com.br/mundo_da_pipa');
+      setFileName(null);
+      setVideoFileName(productToEdit.videoUrl?.startsWith('local-video://') ? 'Vídeo do produto carregado' : null);
     } else {
       // Reset form for new product
       setName('');
@@ -69,7 +80,9 @@ export const AdminProductModal: React.FC<AdminProductModalProps> = ({
       setExtraImageUrl('');
       setVideoUrl('');
       setFileName(null);
+      setVideoFileName(null);
       setUploadSource('device');
+      setVideoSource('device');
       setDescription('');
       setSpecs(['Bambu selecionado', 'Papel de seda de alta qualidade']);
       setBadge('Novo');
@@ -80,6 +93,7 @@ export const AdminProductModal: React.FC<AdminProductModalProps> = ({
 
   if (!isOpen) return null;
 
+  // Handle Cover Image Upload from Device (Any size accepted, auto-processed)
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
@@ -87,54 +101,85 @@ export const AdminProductModal: React.FC<AdminProductModalProps> = ({
       setLoading(true);
       setError(null);
       try {
-        const compressedBase64 = await compressImageFile(file, 800, 800, 0.75);
+        const compressedBase64 = await compressImageFile(file, 720, 720, 0.68);
         setImage(compressedBase64);
         if (!images.includes(compressedBase64)) {
-          setImages([...images, compressedBase64]);
+          setImages([compressedBase64, ...images]);
         }
       } catch (err: any) {
         console.error('Error compressing image:', err);
-        setError('Erro ao processar imagem do dispositivo: ' + (err.message || 'Tente outra imagem'));
+        setError('Erro ao carregar imagem: ' + (err.message || 'Tente outra foto.'));
       } finally {
         setLoading(false);
       }
     }
   };
 
-  const handleVideoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Handle Extra Gallery Images Upload from Device (No quantity or size limits)
+  const handleExtraFilesUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (files && files.length > 0) {
+      setIsCompressingExtra(true);
+      setError(null);
+      try {
+        const newImages: string[] = [];
+        for (let i = 0; i < files.length; i++) {
+          const file = files[i];
+          const compressed = await compressImageFile(file, 720, 720, 0.68);
+          if (!images.includes(compressed) && !newImages.includes(compressed)) {
+            newImages.push(compressed);
+          }
+        }
+        setImages((prev) => [...prev, ...newImages]);
+      } catch (err: any) {
+        console.error('Error compressing extra images:', err);
+        setError('Erro ao carregar fotos: ' + (err.message || 'Tente novamente'));
+      } finally {
+        setIsCompressingExtra(false);
+        if (extraFileInputRef.current) {
+          extraFileInputRef.current.value = '';
+        }
+      }
+    }
+  };
+
+  // Handle Video Upload (Any video size accepted with no limits via local store)
+  const handleVideoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      if (file.size > 30 * 1024 * 1024) {
-        setError('O vídeo selecionado deve ter menos de 30MB para rápida renderização.');
-        return;
-      }
       setVideoFileName(file.name);
       setLoading(true);
       setError(null);
 
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        const videoBase64 = event.target?.result as string;
-        setVideoUrl(videoBase64);
+      try {
+        const mediaId = `vid_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+        const localRef = await saveLocalVideo(mediaId, file);
+        setVideoUrl(localRef);
+      } catch (err: any) {
+        console.error('Error storing video:', err);
+        setError('Erro ao salvar vídeo: ' + (err.message || 'Tente novamente'));
+      } finally {
         setLoading(false);
-      };
-      reader.onerror = () => {
-        setError('Erro ao ler o arquivo de vídeo do dispositivo.');
-        setLoading(false);
-      };
-      reader.readAsDataURL(file);
+      }
     }
   };
 
   const handleAddExtraImage = () => {
     if (extraImageUrl.trim()) {
-      setImages([...images, extraImageUrl.trim()]);
+      if (!images.includes(extraImageUrl.trim())) {
+        setImages([...images, extraImageUrl.trim()]);
+      }
       setExtraImageUrl('');
     }
   };
 
   const handleRemoveImage = (index: number) => {
-    setImages(images.filter((_, i) => i !== index));
+    const removedImg = images[index];
+    const newImages = images.filter((_, i) => i !== index);
+    setImages(newImages);
+    if (image === removedImg) {
+      setImage(newImages.length > 0 ? newImages[0] : '');
+    }
   };
 
   const handleAddSpec = () => {
@@ -173,17 +218,17 @@ export const AdminProductModal: React.FC<AdminProductModalProps> = ({
       const allImages = images.length > 0 ? images : [cover];
 
       const productData = {
-        name,
+        name: name.trim(),
         category,
         price: numPrice,
         originalPrice: numOrigPrice,
         image: cover,
         images: allImages,
         videoUrl: videoUrl.trim() || undefined,
-        description,
+        description: description.trim(),
         specs,
         inStock,
-        shopeeUrl,
+        shopeeUrl: shopeeUrl.trim() || 'https://shopee.com.br/mundo_da_pipa',
         badge: badge.trim() || undefined,
         rating: productToEdit ? productToEdit.rating : 5.0,
         salesCount: numSalesCount
@@ -198,7 +243,7 @@ export const AdminProductModal: React.FC<AdminProductModalProps> = ({
       onClose();
     } catch (err: any) {
       console.error('Error saving product:', err);
-      setError('Erro ao salvar produto: ' + err.message);
+      setError('Erro ao salvar produto: ' + (err.message || 'Tente novamente'));
     } finally {
       setLoading(false);
     }
@@ -206,7 +251,7 @@ export const AdminProductModal: React.FC<AdminProductModalProps> = ({
 
   const handleDelete = async () => {
     if (!productToEdit) return;
-    if (window.confirm(`Tem certeza que deseja DELETAR o item "${productToEdit.name}"?`)) {
+    if (window.confirm(`Tem certeza que deseja DELETAR o item "${productToEdit.name}" do catálogo?`)) {
       setLoading(true);
       try {
         await deleteProductFromFirestore(productToEdit.id);
@@ -220,20 +265,20 @@ export const AdminProductModal: React.FC<AdminProductModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/80 backdrop-blur-sm animate-fadeIn overflow-y-auto">
-      <div className="bg-white w-full max-w-2xl rounded-3xl shadow-2xl overflow-hidden border border-slate-100 my-8 flex flex-col max-h-[90vh]">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/85 backdrop-blur-sm animate-fadeIn overflow-y-auto">
+      <div className="bg-white w-full max-w-2xl rounded-3xl shadow-2xl overflow-hidden border border-slate-100 my-4 sm:my-8 flex flex-col max-h-[92vh]">
         {/* Header */}
-        <div className="bg-slate-900 text-white px-6 py-5 flex items-center justify-between border-b border-slate-800">
+        <div className="bg-slate-900 text-white px-6 py-4 flex items-center justify-between border-b border-slate-800">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-orange-600 text-white flex items-center justify-center font-black">
+            <div className="w-10 h-10 rounded-xl bg-orange-600 text-white flex items-center justify-center font-black shadow-md">
               <Plus className="w-5 h-5" />
             </div>
             <div>
-              <h2 className="text-xl font-black uppercase tracking-tight">
+              <h2 className="text-lg sm:text-xl font-black uppercase tracking-tight">
                 {productToEdit ? 'Editar Produto' : 'Cadastrar Novo Item (Admin)'}
               </h2>
               <p className="text-xs text-amber-400 font-medium">
-                Gestão completa de estoque, preços, fotos e mídias da loja
+                Gerencie catálogo, preços, fotos e vídeos sem restrições
               </p>
             </div>
           </div>
@@ -246,10 +291,11 @@ export const AdminProductModal: React.FC<AdminProductModalProps> = ({
         </div>
 
         {/* Body Form */}
-        <form onSubmit={handleSubmit} className="p-6 overflow-y-auto space-y-5 flex-1">
+        <form onSubmit={handleSubmit} className="p-5 sm:p-6 overflow-y-auto space-y-5 flex-1">
           {error && (
-            <div className="p-3 bg-red-50 border border-red-200 text-red-700 rounded-xl text-xs font-bold">
-              {error}
+            <div className="p-3.5 bg-red-50 border border-red-200 text-red-700 rounded-2xl text-xs font-bold flex items-start gap-2">
+              <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+              <span>{error}</span>
             </div>
           )}
 
@@ -263,7 +309,7 @@ export const AdminProductModal: React.FC<AdminProductModalProps> = ({
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder="Ex: Pipa Raia Combate 45cm (Pacote c/ 10 un)"
-                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm font-semibold text-slate-900 focus:outline-none focus:border-orange-500"
+                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm font-semibold text-slate-900 focus:outline-none focus:border-orange-500 focus:bg-white"
               />
             </div>
 
@@ -272,7 +318,7 @@ export const AdminProductModal: React.FC<AdminProductModalProps> = ({
               <select
                 value={category}
                 onChange={(e) => setCategory(e.target.value as Category)}
-                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm font-bold text-slate-900 focus:outline-none focus:border-orange-500"
+                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm font-bold text-slate-900 focus:outline-none focus:border-orange-500 focus:bg-white"
               >
                 <option value="pipas">Pipas</option>
                 <option value="linhas">Linhas</option>
@@ -318,7 +364,7 @@ export const AdminProductModal: React.FC<AdminProductModalProps> = ({
                 min="0"
                 value={salesCount}
                 onChange={(e) => setSalesCount(e.target.value)}
-                placeholder="Ex: 120 (opcional)"
+                placeholder="Ex: 120"
                 className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-sm font-semibold text-slate-900 focus:outline-none focus:border-orange-500"
               />
             </div>
@@ -335,12 +381,12 @@ export const AdminProductModal: React.FC<AdminProductModalProps> = ({
             </div>
           </div>
 
-          {/* Photo & Multi-Media Section */}
+          {/* Photo & Media Section */}
           <div className="space-y-4 bg-slate-50 p-4 rounded-2xl border border-slate-200">
             <div className="flex items-center justify-between border-b border-slate-200 pb-2">
               <label className="block text-xs font-black uppercase text-slate-800 flex items-center gap-1.5">
                 <ImageIcon className="w-4 h-4 text-orange-600" />
-                <span>Mídias do Produto (Fotos e Vídeo)</span>
+                <span>Fotos do Produto</span>
               </label>
               <div className="flex items-center gap-1 bg-white p-1 rounded-xl border border-slate-200 text-[11px] font-bold">
                 <button
@@ -384,22 +430,32 @@ export const AdminProductModal: React.FC<AdminProductModalProps> = ({
                   />
                   <div
                     onClick={() => fileInputRef.current?.click()}
-                    className="border-2 border-dashed border-slate-300 hover:border-orange-500 bg-white p-3 rounded-xl text-center cursor-pointer transition-all hover:bg-orange-50/50 group"
+                    className="border-2 border-dashed border-slate-300 hover:border-orange-500 bg-white p-3.5 rounded-xl text-center cursor-pointer transition-all hover:bg-orange-50/50 group"
                   >
                     <div className="w-8 h-8 bg-orange-100 group-hover:bg-orange-200 text-orange-600 rounded-xl flex items-center justify-center mx-auto mb-1 transition-colors">
                       <Camera className="w-4 h-4" />
                     </div>
                     <p className="text-xs font-bold text-slate-800">
-                      Clique para escolher imagem do Celular ou Computador
+                      Clique para escolher imagem da Capa (Celular ou Computador)
                     </p>
+                    {fileName && (
+                      <span className="inline-block mt-1 text-[11px] font-extrabold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                        ✓ {fileName}
+                      </span>
+                    )}
                   </div>
                 </div>
               ) : (
                 <input
                   type="url"
                   value={image}
-                  onChange={(e) => setImage(e.target.value)}
-                  placeholder="Cole a URL da foto principal..."
+                  onChange={(e) => {
+                    setImage(e.target.value);
+                    if (e.target.value.trim() && !images.includes(e.target.value.trim())) {
+                      setImages([e.target.value.trim(), ...images]);
+                    }
+                  }}
+                  placeholder="Cole o link da foto principal..."
                   className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2 text-xs font-medium text-slate-900 focus:outline-none focus:border-orange-500"
                 />
               )}
@@ -407,15 +463,35 @@ export const AdminProductModal: React.FC<AdminProductModalProps> = ({
 
             {/* Gallery Multiple Photos */}
             <div>
-              <span className="block text-[11px] font-bold text-slate-600 uppercase mb-1">
-                Galeria de Fotos Adicionais ({images.length} foto{images.length !== 1 ? 's' : ''})
-              </span>
+              <div className="flex items-center justify-between mb-1">
+                <span className="block text-[11px] font-bold text-slate-600 uppercase">
+                  Galeria de Fotos Adicionais ({images.length} foto{images.length !== 1 ? 's' : ''})
+                </span>
+                <input
+                  type="file"
+                  ref={extraFileInputRef}
+                  accept="image/*"
+                  multiple
+                  onChange={handleExtraFilesUpload}
+                  className="hidden"
+                />
+                <button
+                  type="button"
+                  onClick={() => extraFileInputRef.current?.click()}
+                  disabled={isCompressingExtra}
+                  className="text-xs font-bold text-orange-600 hover:text-orange-700 bg-orange-50 hover:bg-orange-100 px-2.5 py-1 rounded-lg border border-orange-200 flex items-center gap-1 transition-colors"
+                >
+                  <Camera className="w-3.5 h-3.5" />
+                  <span>{isCompressingExtra ? 'Carregando...' : '+ Adicionar Fotos do Aparelho'}</span>
+                </button>
+              </div>
+
               <div className="flex gap-2 mb-2">
                 <input
                   type="url"
                   value={extraImageUrl}
                   onChange={(e) => setExtraImageUrl(e.target.value)}
-                  placeholder="Link de outra foto do produto..."
+                  placeholder="Ou adicione link de outra foto web..."
                   className="flex-1 bg-white border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-medium text-slate-900 focus:outline-none focus:border-orange-500"
                 />
                 <button
@@ -423,7 +499,7 @@ export const AdminProductModal: React.FC<AdminProductModalProps> = ({
                   onClick={handleAddExtraImage}
                   className="bg-slate-900 text-white font-bold text-xs px-3 py-1.5 rounded-xl hover:bg-slate-800 shrink-0"
                 >
-                  + Add Foto
+                  + Add Link
                 </button>
               </div>
 
@@ -435,7 +511,7 @@ export const AdminProductModal: React.FC<AdminProductModalProps> = ({
                       <button
                         type="button"
                         onClick={() => handleRemoveImage(idx)}
-                        className="absolute inset-0 bg-red-900/80 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity text-xs font-bold"
+                        className="absolute inset-0 bg-red-900/80 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity text-[10px] font-bold"
                       >
                         Remover
                       </button>
@@ -445,31 +521,33 @@ export const AdminProductModal: React.FC<AdminProductModalProps> = ({
               )}
             </div>
 
-            {/* Video Section with File Upload or URL */}
-            <div className="bg-white p-3.5 rounded-xl border border-slate-200 space-y-2">
+            {/* Video Section */}
+            <div className="bg-white p-4 rounded-xl border border-slate-200 space-y-2.5">
               <div className="flex items-center justify-between">
                 <label className="text-xs font-black uppercase text-slate-800 flex items-center gap-1.5">
                   <Video className="w-4 h-4 text-red-500" />
-                  <span>Vídeo Demonstrativo do Produto</span>
+                  <span>Vídeo do Produto</span>
                 </label>
                 <div className="flex items-center gap-1 bg-slate-100 p-0.5 rounded-lg text-[10px] font-bold">
                   <button
                     type="button"
                     onClick={() => setVideoSource('device')}
-                    className={`px-2 py-0.5 rounded ${
-                      videoSource === 'device' ? 'bg-orange-600 text-white' : 'text-slate-600'
+                    className={`px-2.5 py-1 rounded-md flex items-center gap-1 transition-all ${
+                      videoSource === 'device' ? 'bg-orange-600 text-white shadow' : 'text-slate-600'
                     }`}
                   >
-                    Arquivo MP4/WebM
+                    <Upload className="w-3 h-3" />
+                    <span>Arquivo do Dispositivo</span>
                   </button>
                   <button
                     type="button"
                     onClick={() => setVideoSource('url')}
-                    className={`px-2 py-0.5 rounded ${
-                      videoSource === 'url' ? 'bg-orange-600 text-white' : 'text-slate-600'
+                    className={`px-2.5 py-1 rounded-md flex items-center gap-1 transition-all ${
+                      videoSource === 'url' ? 'bg-orange-600 text-white shadow' : 'text-slate-600'
                     }`}
                   >
-                    Link / URL
+                    <Youtube className="w-3 h-3" />
+                    <span>Link Web</span>
                   </button>
                 </div>
               </div>
@@ -479,48 +557,45 @@ export const AdminProductModal: React.FC<AdminProductModalProps> = ({
                   <input
                     type="file"
                     ref={videoFileInputRef}
-                    accept="video/mp4,video/webm,video/ogg,video/*"
+                    accept="video/*,video/mp4,video/webm,video/ogg,video/quicktime"
                     onChange={handleVideoUpload}
                     className="hidden"
                   />
                   <div
                     onClick={() => videoFileInputRef.current?.click()}
-                    className="border-2 border-dashed border-red-200 hover:border-red-400 bg-red-50/50 p-3 rounded-xl text-center cursor-pointer transition-all hover:bg-red-50"
+                    className="border-2 border-dashed border-red-200 hover:border-red-400 bg-red-50/40 p-4 rounded-xl text-center cursor-pointer transition-all hover:bg-red-50"
                   >
-                    <div className="w-8 h-8 bg-red-100 text-red-600 rounded-lg flex items-center justify-center mx-auto mb-1">
-                      <Video className="w-4 h-4" />
+                    <div className="w-9 h-9 bg-red-100 text-red-600 rounded-xl flex items-center justify-center mx-auto mb-1">
+                      <Video className="w-5 h-5" />
                     </div>
                     <p className="text-xs font-bold text-slate-800">
-                      Clique para escolher vídeo (MP4, WebM) do Celular ou PC
+                      Clique para escolher qualquer vídeo do Celular ou PC
                     </p>
                     {videoFileName && (
-                      <span className="inline-block mt-1 text-[11px] font-extrabold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                      <span className="inline-block mt-2 text-[11px] font-extrabold text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-md border border-emerald-200">
                         ✓ {videoFileName}
                       </span>
                     )}
                   </div>
                 </div>
               ) : (
-                <input
-                  type="url"
-                  value={videoUrl}
-                  onChange={(e) => setVideoUrl(e.target.value)}
-                  placeholder="Ex: https://www.w3schools.com/html/mov_bbb.mp4 ou link de vídeo..."
-                  className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2 text-xs font-medium text-slate-900 focus:outline-none focus:border-orange-500"
-                />
+                <div className="space-y-1.5">
+                  <input
+                    type="url"
+                    value={videoUrl}
+                    onChange={(e) => setVideoUrl(e.target.value)}
+                    placeholder="Ex: Link do YouTube, Shorts, Shopee, Google Drive ou link direto MP4..."
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2 text-xs font-medium text-slate-900 focus:outline-none focus:border-orange-500 focus:bg-white"
+                  />
+                </div>
               )}
 
               {/* Video Player Preview */}
               {videoUrl && (
-                <div className="mt-2 p-2 bg-black rounded-xl overflow-hidden relative group">
-                  <video
-                    src={videoUrl}
-                    controls
-                    preload="metadata"
-                    className="w-full max-h-40 object-contain rounded-lg"
-                  >
-                    Seu navegador não suporta reprodução de vídeo.
-                  </video>
+                <div className="mt-2 p-2 bg-slate-950 rounded-xl overflow-hidden relative group">
+                  <div className="h-44 w-full flex items-center justify-center">
+                    <SmartVideoPlayer url={videoUrl} />
+                  </div>
                   <button
                     type="button"
                     onClick={() => { setVideoUrl(''); setVideoFileName(null); }}
@@ -555,7 +630,7 @@ export const AdminProductModal: React.FC<AdminProductModalProps> = ({
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               placeholder="Descreva detalhes como material, acabamento, tamanho..."
-              className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-sm font-medium text-slate-900 focus:outline-none focus:border-orange-500"
+              className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-sm font-medium text-slate-900 focus:outline-none focus:border-orange-500 focus:bg-white"
             />
           </div>
 
@@ -569,12 +644,12 @@ export const AdminProductModal: React.FC<AdminProductModalProps> = ({
                 onChange={(e) => setSpecInput(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), handleAddSpec())}
                 placeholder="Ex: Tamanho 60cm, Vareta de bambu"
-                className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-medium text-slate-900 focus:outline-none focus:border-orange-500"
+                className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-medium text-slate-900 focus:outline-none focus:border-orange-500 focus:bg-white"
               />
               <button
                 type="button"
                 onClick={handleAddSpec}
-                className="bg-slate-900 text-white font-bold text-xs px-4 py-2 rounded-xl hover:bg-slate-800"
+                className="bg-slate-900 text-white font-bold text-xs px-4 py-2 rounded-xl hover:bg-slate-800 shrink-0"
               >
                 + Add Spec
               </button>
@@ -586,7 +661,7 @@ export const AdminProductModal: React.FC<AdminProductModalProps> = ({
                   <button
                     type="button"
                     onClick={() => handleRemoveSpec(index)}
-                    className="text-slate-400 hover:text-red-600"
+                    className="text-slate-400 hover:text-red-600 font-bold"
                   >
                     ×
                   </button>
@@ -634,7 +709,7 @@ export const AdminProductModal: React.FC<AdminProductModalProps> = ({
               <button
                 type="submit"
                 disabled={loading}
-                className="bg-orange-600 hover:bg-orange-700 text-white font-black text-xs px-6 py-3 rounded-xl shadow-lg flex items-center gap-2 uppercase tracking-wide disabled:opacity-50"
+                className="bg-orange-600 hover:bg-orange-700 text-white font-black text-xs px-6 py-3 rounded-xl shadow-lg flex items-center gap-2 uppercase tracking-wide disabled:opacity-50 transition-all"
               >
                 <Save className="w-4 h-4" />
                 <span>{loading ? 'Salvando...' : 'Salvar Produto'}</span>
