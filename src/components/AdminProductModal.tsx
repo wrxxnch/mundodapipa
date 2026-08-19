@@ -5,7 +5,7 @@ import {
   Sparkles, Video, AlertCircle, Youtube, ExternalLink 
 } from 'lucide-react';
 import { Product, Category } from '../types';
-import { addProductToFirestore, updateProductInFirestore, deleteProductFromFirestore } from '../lib/firebase';
+import { addProductToFirestore, updateProductInFirestore, deleteProductFromFirestore, deleteField } from '../lib/firebase';
 import { compressImageFile } from '../utils/imageCompressor';
 import { saveLocalVideo } from '../utils/mediaStore';
 import { SmartVideoPlayer } from './SmartVideoPlayer';
@@ -93,44 +93,41 @@ export const AdminProductModal: React.FC<AdminProductModalProps> = ({
 
   if (!isOpen) return null;
 
-  // Handle Cover Image Upload from Device (Any size accepted, auto-processed)
+  // Handle Cover Image Upload from Device (Instant compression)
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
       setFileName(file.name);
-      setLoading(true);
       setError(null);
       try {
-        const compressedBase64 = await compressImageFile(file, 720, 720, 0.68);
+        const compressedBase64 = await compressImageFile(file, 640, 640, 0.72);
         setImage(compressedBase64);
-        if (!images.includes(compressedBase64)) {
-          setImages([compressedBase64, ...images]);
-        }
+        setImages(prev => prev.includes(compressedBase64) ? prev : [compressedBase64, ...prev]);
       } catch (err: any) {
         console.error('Error compressing image:', err);
         setError('Erro ao carregar imagem: ' + (err.message || 'Tente outra foto.'));
-      } finally {
-        setLoading(false);
       }
     }
   };
 
-  // Handle Extra Gallery Images Upload from Device (No quantity or size limits)
+  // Handle Extra Gallery Images Upload from Device (Parallel instant compression)
   const handleExtraFilesUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (files && files.length > 0) {
       setIsCompressingExtra(true);
       setError(null);
       try {
-        const newImages: string[] = [];
-        for (let i = 0; i < files.length; i++) {
-          const file = files[i];
-          const compressed = await compressImageFile(file, 720, 720, 0.68);
-          if (!images.includes(compressed) && !newImages.includes(compressed)) {
-            newImages.push(compressed);
-          }
-        }
-        setImages((prev) => [...prev, ...newImages]);
+        const filesArray = Array.from(files) as File[];
+        const compressedList = await Promise.all(
+          filesArray.map(f => compressImageFile(f, 640, 640, 0.72))
+        );
+        setImages(prev => {
+          const combined = [...prev];
+          compressedList.forEach(img => {
+            if (!combined.includes(img)) combined.push(img);
+          });
+          return combined;
+        });
       } catch (err: any) {
         console.error('Error compressing extra images:', err);
         setError('Erro ao carregar fotos: ' + (err.message || 'Tente novamente'));
@@ -217,23 +214,42 @@ export const AdminProductModal: React.FC<AdminProductModalProps> = ({
       const cover = image.trim() || (images.length > 0 ? images[0] : 'https://images.unsplash.com/photo-1534447677768-be436bb09401?auto=format&fit=crop&w=600&q=80');
       const allImages = images.length > 0 ? images : [cover];
 
-      const productData: any = {
+      const productData: Record<string, any> = {
         name: name.trim(),
         category,
         price: numPrice,
         image: cover,
         images: allImages,
         description: description.trim(),
-        specs,
+        specs: specs.filter(s => s && s.trim().length > 0),
         inStock,
         shopeeUrl: shopeeUrl.trim() || 'https://shopee.com.br/mundo_da_pipa',
         rating: productToEdit ? productToEdit.rating : 5.0
       };
 
-      if (numOrigPrice !== undefined) productData.originalPrice = numOrigPrice;
-      if (videoUrl.trim()) productData.videoUrl = videoUrl.trim();
-      if (badge.trim()) productData.badge = badge.trim();
-      if (numSalesCount !== undefined) productData.salesCount = numSalesCount;
+      if (numOrigPrice !== undefined) {
+        productData.originalPrice = numOrigPrice;
+      } else if (productToEdit) {
+        productData.originalPrice = deleteField();
+      }
+
+      if (videoUrl && videoUrl.trim()) {
+        productData.videoUrl = videoUrl.trim();
+      } else if (productToEdit) {
+        productData.videoUrl = deleteField();
+      }
+
+      if (badge && badge.trim()) {
+        productData.badge = badge.trim();
+      } else if (productToEdit) {
+        productData.badge = deleteField();
+      }
+
+      if (numSalesCount !== undefined) {
+        productData.salesCount = numSalesCount;
+      } else if (productToEdit) {
+        productData.salesCount = deleteField();
+      }
 
       if (productToEdit) {
         await updateProductInFirestore(productToEdit.id, productData);

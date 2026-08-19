@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { X, DollarSign, Check, Trash2 } from 'lucide-react';
 import { Product } from '../types';
-import { updateProductInFirestore, deleteProductFromFirestore } from '../lib/firebase';
+import { updateProductInFirestore, deleteProductFromFirestore, deleteField } from '../lib/firebase';
 
 interface EditPriceModalProps {
   product: Product | null;
@@ -43,11 +43,21 @@ export const EditPriceModal: React.FC<EditPriceModalProps> = ({
     setLoading(true);
 
     try {
-      await updateProductInFirestore(product.id, {
-        price: numPrice,
-        originalPrice: numOrigPrice !== null ? numOrigPrice : undefined,
-        salesCount: numSales !== null ? numSales : undefined
-      });
+      const updates: Record<string, any> = {
+        price: numPrice
+      };
+      if (numOrigPrice !== null) {
+        updates.originalPrice = numOrigPrice;
+      } else {
+        updates.originalPrice = deleteField();
+      }
+      if (numSales !== null) {
+        updates.salesCount = numSales;
+      } else {
+        updates.salesCount = deleteField();
+      }
+
+      await updateProductInFirestore(product.id, updates);
       onClose();
     } catch (err: any) {
       setError('Erro ao atualizar dados: ' + err.message);
