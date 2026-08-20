@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { X, Save, RotateCcw, Sparkles, BookOpen, Award, Heart, Flag } from 'lucide-react';
-import { StoryContent, DEFAULT_STORY_CONTENT, saveStoryContent } from '../lib/firebase';
+import { StoryContent, DEFAULT_STORY_CONTENT, saveStoryContent } from '../lib/supabase';
 
 interface EditStoryModalProps {
   isOpen: boolean;

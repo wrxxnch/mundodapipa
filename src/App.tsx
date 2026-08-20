@@ -25,7 +25,7 @@ import {
   saveUserCartToFirestore,
   subscribeToUserCart,
   UserProfile 
-} from './lib/firebase';
+} from './lib/supabase';
 import { ShoppingBag } from 'lucide-react';
 
 import { Filter, SlidersHorizontal, Sparkles, Plus, ShieldCheck, DollarSign, Lock, Trash2, PackagePlus } from 'lucide-react';

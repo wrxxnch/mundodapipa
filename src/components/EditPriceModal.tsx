@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { X, DollarSign, Check, Trash2, Package } from 'lucide-react';
 import { Product } from '../types';
-import { updateProductInFirestore, deleteProductFromFirestore, deleteField } from '../lib/firebase';
+import { updateProductInFirestore, deleteProductFromFirestore, deleteField } from '../lib/supabase';
 
 interface EditPriceModalProps {
   product: Product | null;

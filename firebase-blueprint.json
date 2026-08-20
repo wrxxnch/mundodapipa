@@ -2,7 +2,7 @@
   "entities": {
     "products": {
       "title": "Products",
-      "description": "Catalog of kites, lines, reels, and accessories",
+      "description": "Catalog of kites, lines, reels, accessories and public product posts",
       "type": "object",
       "properties": {
         "id": { "type": "string" },
@@ -11,18 +11,39 @@
         "price": { "type": "number" },
         "originalPrice": { "type": "number" },
         "image": { "type": "string" },
+        "images": { "type": "array" },
+        "videoUrl": { "type": "string" },
+        "videos": { "type": "array" },
         "description": { "type": "string" },
         "specs": {
-          "type": "array",
-          "items": { "type": "string" }
+          "type": "array"
         },
         "inStock": { "type": "boolean" },
+        "stockQuantity": { "type": "number" },
         "shopeeUrl": { "type": "string" },
         "badge": { "type": "string" },
         "rating": { "type": "number" },
-        "salesCount": { "type": "number" }
+        "salesCount": { "type": "number" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
       },
       "required": ["name", "category", "price", "description", "inStock"]
+    },
+    "posts": {
+      "title": "Posts",
+      "description": "Public community and announcement posts",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "content": { "type": "string" },
+        "author": { "type": "string" },
+        "authorId": { "type": "string" },
+        "imageUrl": { "type": "string" },
+        "videoUrl": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["content", "createdAt"]
     },
     "users": {
       "title": "Users",
@@ -43,6 +64,18 @@
       "properties": {
         "userId": { "type": "string" },
         "items": { "type": "array" },
+        "updatedAt": { "type": "string" }
+      }
+    },
+    "site_content": {
+      "title": "SiteContent",
+      "description": "Public editable content like story, about, and highlights",
+      "type": "object",
+      "properties": {
+        "badge": { "type": "string" },
+        "title": { "type": "string" },
+        "paragraph1": { "type": "string" },
+        "paragraph2": { "type": "string" },
         "updatedAt": { "type": "string" }
       }
     }

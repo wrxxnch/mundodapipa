@@ -5,7 +5,7 @@ import {
   Sparkles, Video, AlertCircle, Youtube, ExternalLink, Package 
 } from 'lucide-react';
 import { Product, Category } from '../types';
-import { addProductToFirestore, updateProductInFirestore, deleteProductFromFirestore, deleteField } from '../lib/firebase';
+import { addProductToFirestore, updateProductInFirestore, deleteProductFromFirestore, deleteField } from '../lib/supabase';
 import { compressImageFile } from '../utils/imageCompressor';
 import { saveLocalVideo } from '../utils/mediaStore';
 import { SmartVideoPlayer } from './SmartVideoPlayer';

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { X, Lock, Mail, User, ShieldCheck, ArrowRight, AlertCircle } from 'lucide-react';
-import { loginUser, registerUser, loginWithGoogle, UserProfile } from '../lib/firebase';
+import { loginUser, registerUser, loginWithGoogle, UserProfile } from '../lib/supabase';
 
 interface AuthModalProps {
   isOpen: boolean;
