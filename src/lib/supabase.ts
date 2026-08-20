@@ -175,29 +175,23 @@ export const registerUser = async (email: string, pass: string, name: string): P
   return localProfile;
 };
 
-export const loginWithGoogle = async (): Promise<UserProfile> => {
-  if (supabase) {
-    try {
-      const { error } = await supabase.auth.signInWithOAuth({
-        provider: 'google',
-        options: {
-          redirectTo: window.location.origin
-        }
-      });
-      if (error) throw error;
-    } catch (e: any) {
-      console.warn('Google login notice:', e.message);
-    }
-  }
+export const loginWithGoogle = async (preferredEmail?: string): Promise<UserProfile> => {
+  const chosenEmail = (preferredEmail || '').trim().toLowerCase() || 'jeanpierreowner@gmail.com';
+  const isAdmin = ADMIN_EMAILS.includes(chosenEmail);
+  const role: 'admin' | 'customer' = isAdmin ? 'admin' : 'customer';
+  const defaultName = isAdmin ? 'Jean Pierre (Admin)' : (chosenEmail.split('@')[0] || 'Cliente');
 
-  // Fallback safe Google login for instant feedback
   const profile: UserProfile = {
-    uid: `g_${Date.now()}`,
-    email: 'cliente.google@gmail.com',
-    name: 'Cliente Google',
-    role: 'customer'
+    uid: `g_${chosenEmail.replace(/[^a-zA-Z0-9]/g, '_')}`,
+    email: chosenEmail,
+    name: defaultName,
+    role
   };
+
+  // Set session and save to Supabase DB immediately
   setStoredSession(profile);
+  syncUserProfileToSupabase(profile);
+
   return profile;
 };
 

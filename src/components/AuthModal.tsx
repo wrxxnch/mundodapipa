@@ -62,7 +62,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     setError(null);
     setLoading(true);
     try {
-      const user = await loginWithGoogle();
+      const user = await loginWithGoogle(email.trim() || undefined);
       onLoginSuccess(user);
       onClose();
     } catch (err: any) {
@@ -229,7 +229,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
           <div className="mt-4 p-3 bg-slate-50 rounded-xl border border-slate-200 text-center">
             <p className="text-[11px] font-bold text-slate-600">
-              🔒 O perfil (Administrador ou Cliente) é definido automaticamente pelo Firebase no banco de dados através do e-mail cadastrado.
+              🔒 O perfil (Administrador ou Cliente) é definido automaticamente pelo banco de dados Supabase através do e-mail cadastrado.
             </p>
           </div>
 
