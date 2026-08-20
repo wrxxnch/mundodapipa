@@ -62,11 +62,11 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     setError(null);
     setLoading(true);
     try {
-      const user = await loginWithGoogle(email.trim() || undefined);
+      const user = await loginWithGoogle();
       onLoginSuccess(user);
       onClose();
     } catch (err: any) {
-      setError('Erro ao entrar com Google: ' + (err.message || 'Falha na autenticação'));
+      setError(err.message || 'Falha ao autenticar com a conta Google');
     } finally {
       setLoading(false);
     }

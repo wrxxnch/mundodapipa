@@ -17,6 +17,7 @@ import { Category, Product, CartItem } from './types';
 import { PRODUCTS as DEFAULT_PRODUCTS } from './data/products';
 import { 
   subscribeToProducts, 
+  getLocalProducts,
   listenAuthState, 
   logoutAppUser, 
   deleteProductFromFirestore,
@@ -35,8 +36,8 @@ export default function App() {
   const [searchQuery, setSearchQuery] = useState('');
   const [sortBy, setSortBy] = useState<'relevance' | 'price-asc' | 'price-desc' | 'sales'>('relevance');
 
-  // Firebase Real-time Products list (starts empty for fresh creation)
-  const [products, setProducts] = useState<Product[]>([]);
+  // Real-time Products list with all products loaded by default for all visitors
+  const [products, setProducts] = useState<Product[]>(() => getLocalProducts());
   
   // Firebase Auth User State
   const [user, setUser] = useState<UserProfile | null>(null);
@@ -48,6 +49,8 @@ export default function App() {
   
   const [productToEdit, setProductToEdit] = useState<Product | null>(null);
   const [productToEditPrice, setProductToEditPrice] = useState<Product | null>(null);
+  const [productToDelete, setProductToDelete] = useState<Product | null>(null);
+  const [isClearCatalogModalOpen, setIsClearCatalogModalOpen] = useState(false);
   
   // Cart state with localStorage persistence
   const [cartItems, setCartItems] = useState<CartItem[]>(() => {
@@ -62,36 +65,12 @@ export default function App() {
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
 
-  // Clear all products action with Admin email verification
-  const handleClearAllProducts = async () => {
+  // Clear all products action with in-app modal
+  const handleClearAllProducts = () => {
     if (!user || user.role !== 'admin') {
-      alert('Acesso restrito ao administrador do sistema.');
       return;
     }
-
-    const adminEmail = user.email || 'jeanpierreowner@gmail.com';
-    const inputEmail = window.prompt(
-      `ATENÇÃO: Ação irreversível!\n\nPara confirmar a exclusão de TODOS os produtos do catálogo, digite o e-mail do administrador (${adminEmail}):`
-    );
-
-    if (inputEmail === null) {
-      return; // Canceled by user
-    }
-
-    if (inputEmail.trim().toLowerCase() !== adminEmail.trim().toLowerCase()) {
-      alert('E-mail incorreto. A exclusão de todo o catálogo foi CANCELADA por segurança.');
-      return;
-    }
-
-    if (window.confirm('Confirmação final: Tem certeza que deseja apagar permanentemente todos os produtos do catálogo?')) {
-      try {
-        await clearAllProductsFromFirestore();
-        setProducts([]);
-        alert('Catálogo limpo com sucesso! Você pode cadastrar novos itens.');
-      } catch (err: any) {
-        alert('Erro ao limpar produtos: ' + err.message);
-      }
-    }
+    setIsClearCatalogModalOpen(true);
   };
 
   // Subscribe to Firebase Firestore Products in Real-time
@@ -227,14 +206,8 @@ export default function App() {
     setIsPriceModalOpen(true);
   };
 
-  const handleDeleteProduct = async (product: Product) => {
-    if (window.confirm(`Tem certeza que deseja DELETAR o item "${product.name}" do catálogo?`)) {
-      try {
-        await deleteProductFromFirestore(product.id);
-      } catch (err: any) {
-        alert('Erro ao deletar produto: ' + err.message);
-      }
-    }
+  const handleDeleteProduct = (product: Product) => {
+    setProductToDelete(product);
   };
 
   // Filter & Sort logic
@@ -466,6 +439,78 @@ export default function App() {
         onClearCart={handleClearCart}
         user={user}
       />
+
+      {/* In-App Delete Single Product Confirmation Modal */}
+      {productToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-fadeIn">
+          <div className="bg-white w-full max-w-sm rounded-3xl shadow-2xl overflow-hidden border border-slate-100 p-6 relative">
+            <div className="w-12 h-12 rounded-2xl bg-red-100 text-red-600 flex items-center justify-center mx-auto mb-3">
+              <Trash2 className="w-6 h-6" />
+            </div>
+            <h3 className="text-lg font-black text-slate-900 text-center">Deletar Produto?</h3>
+            <p className="text-xs text-slate-500 text-center mt-1">
+              Tem certeza que deseja remover <strong className="text-slate-900 font-bold">"{productToDelete.name}"</strong> do catálogo?
+            </p>
+            <div className="mt-5 flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setProductToDelete(null)}
+                className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs py-3 rounded-xl transition-colors"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  const id = productToDelete.id;
+                  setProductToDelete(null);
+                  await deleteProductFromFirestore(id);
+                }}
+                className="flex-1 bg-red-600 hover:bg-red-700 text-white font-black text-xs py-3 rounded-xl shadow transition-colors flex items-center justify-center gap-1.5"
+              >
+                <Trash2 className="w-4 h-4" />
+                <span>Sim, Deletar</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* In-App Clear All Products Confirmation Modal */}
+      {isClearCatalogModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-fadeIn">
+          <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden border border-slate-100 p-6 relative">
+            <div className="w-12 h-12 rounded-2xl bg-red-100 text-red-600 flex items-center justify-center mx-auto mb-3">
+              <Trash2 className="w-6 h-6" />
+            </div>
+            <h3 className="text-lg font-black text-slate-900 text-center">Limpar Todo o Catálogo?</h3>
+            <p className="text-xs text-slate-500 text-center mt-1">
+              Esta ação apagará todos os itens cadastrados. O catálogo ficará vazio e pronto para seus novos produtos reais.
+            </p>
+            <div className="mt-5 flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setIsClearCatalogModalOpen(false)}
+                className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs py-3 rounded-xl transition-colors"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  setIsClearCatalogModalOpen(false);
+                  await clearAllProductsFromFirestore();
+                  setProducts([]);
+                }}
+                className="flex-1 bg-red-600 hover:bg-red-700 text-white font-black text-xs py-3 rounded-xl shadow transition-colors flex items-center justify-center gap-1.5"
+              >
+                <Trash2 className="w-4 h-4" />
+                <span>Sim, Limpar Tudo</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );

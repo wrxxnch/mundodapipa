@@ -33,9 +33,7 @@ export const EditStoryModal: React.FC<EditStoryModalProps> = ({
   };
 
   const handleResetDefault = () => {
-    if (window.confirm('Deseja restaurar o texto e os destaques originais de fábrica?')) {
-      setFormData(DEFAULT_STORY_CONTENT);
-    }
+    setFormData(DEFAULT_STORY_CONTENT);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {

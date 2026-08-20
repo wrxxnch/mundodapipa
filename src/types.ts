@@ -67,4 +67,12 @@ export interface StoryContent {
   value3Desc?: string;
 }
 
+export interface UserProfile {
+  uid: string;
+  email: string;
+  name: string;
+  role: 'admin' | 'customer';
+  photoURL?: string;
+}
+
 

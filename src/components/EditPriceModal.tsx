@@ -20,8 +20,10 @@ export const EditPriceModal: React.FC<EditPriceModalProps> = ({
   const [stockQuantity, setStockQuantity] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   useEffect(() => {
+    setConfirmDelete(false);
     if (product) {
       setPrice(product.price != null ? product.price.toString() : '');
       setOriginalPrice(product.originalPrice != null ? product.originalPrice.toString() : '');
@@ -91,18 +93,16 @@ export const EditPriceModal: React.FC<EditPriceModalProps> = ({
       setLoading(false);
     }
   };
-
+ 
   const handleDelete = async () => {
-    if (window.confirm(`Tem certeza que deseja DELETAR o item "${product.name}"?`)) {
-      setLoading(true);
-      try {
-        await deleteProductFromFirestore(product.id);
-        onClose();
-      } catch (err: any) {
-        setError('Erro ao deletar: ' + err.message);
-      } finally {
-        setLoading(false);
-      }
+    setLoading(true);
+    try {
+      await deleteProductFromFirestore(product.id);
+      onClose();
+    } catch (err: any) {
+      setError('Erro ao deletar: ' + err.message);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -188,26 +188,50 @@ export const EditPriceModal: React.FC<EditPriceModalProps> = ({
             />
           </div>
 
-          <div className="pt-2 flex items-center gap-2">
-            <button
-              type="button"
-              onClick={handleDelete}
-              disabled={loading}
-              className="bg-red-50 hover:bg-red-100 text-red-600 p-2.5 rounded-xl border border-red-200 flex items-center justify-center transition-colors"
-              title="Deletar este produto"
-            >
-              <Trash2 className="w-4 h-4" />
-            </button>
+          {confirmDelete ? (
+            <div className="pt-2 p-2 bg-red-50 rounded-xl border border-red-200 flex flex-col gap-2">
+              <p className="text-[11px] font-bold text-red-700 text-center">Confirmar exclusão deste produto?</p>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleDelete}
+                  disabled={loading}
+                  className="flex-1 bg-red-600 hover:bg-red-700 text-white font-black text-xs py-2 rounded-lg shadow transition-colors flex items-center justify-center gap-1"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>{loading ? 'Deletando...' : 'Sim, Deletar'}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setConfirmDelete(false)}
+                  className="bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold text-xs py-2 px-3 rounded-lg transition-colors"
+                >
+                  Não
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="pt-2 flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setConfirmDelete(true)}
+                disabled={loading}
+                className="bg-red-50 hover:bg-red-100 text-red-600 p-2.5 rounded-xl border border-red-200 flex items-center justify-center transition-colors"
+                title="Deletar este produto"
+              >
+                <Trash2 className="w-4 h-4" />
+              </button>
 
-            <button
-              type="submit"
-              disabled={loading}
-              className="flex-1 bg-orange-600 hover:bg-orange-700 text-white font-black text-xs py-2.5 rounded-xl shadow-md flex items-center justify-center gap-1.5 uppercase tracking-wide transition-all disabled:opacity-50"
-            >
-              <Check className="w-4 h-4" />
-              <span>{loading ? 'Salvando...' : 'Salvar Alteração'}</span>
-            </button>
-          </div>
+              <button
+                type="submit"
+                disabled={loading}
+                className="flex-1 bg-orange-600 hover:bg-orange-700 text-white font-black text-xs py-2.5 rounded-xl shadow-md flex items-center justify-center gap-1.5 uppercase tracking-wide transition-all disabled:opacity-50"
+              >
+                <Check className="w-4 h-4" />
+                <span>{loading ? 'Salvando...' : 'Salvar Alteração'}</span>
+              </button>
+            </div>
+          )}
         </form>
       </div>
     </div>

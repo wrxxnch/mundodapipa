@@ -1,6 +1,16 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
-import { Product, CartItem, Post, StoryContent } from '../types';
-export type { StoryContent };
+import { initializeApp, getApps, getApp } from 'firebase/app';
+import { 
+  getAuth, 
+  GoogleAuthProvider, 
+  signInWithPopup, 
+  signOut as firebaseSignOut,
+  onAuthStateChanged as onFirebaseAuthStateChanged,
+  User as FirebaseUser
+} from 'firebase/auth';
+import firebaseConfig from '../../firebase-applet-config.json';
+import { Product, CartItem, Post, StoryContent, UserProfile } from '../types';
+export type { StoryContent, UserProfile };
 import { PRODUCTS as DEFAULT_PRODUCTS } from '../data/products';
 import { SHOPEE_PRODUCT_FIO10 } from '../data/shopeeData';
 
@@ -26,16 +36,13 @@ export const supabase: SupabaseClient | null = isSupabaseConfigured
     })
   : null;
 
+// Firebase Auth client instance for native Google Account Selection popup
+const fbApp = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
+export const firebaseAuth = getAuth(fbApp);
+
 // ==========================================
 // USER AUTHENTICATION & PROFILES
 // ==========================================
-export interface UserProfile {
-  uid: string;
-  email: string;
-  name: string;
-  role: 'admin' | 'customer';
-}
-
 const ADMIN_EMAILS = [
   'admin@mundodapipa.com.br',
   'jeanpierreowner@gmail.com'
@@ -86,9 +93,7 @@ export const loginUser = async (email: string, pass: string): Promise<UserProfil
     });
 
     if (error) {
-      // If user doesn't exist yet on remote supabase, fallback to safe creation or error
       if (error.message.includes('Invalid login credentials')) {
-        // Try sign up if it's admin or first time
         const { data: signUpData, error: signUpErr } = await supabase.auth.signUp({
           email: trimmedEmail,
           password: pass,
@@ -124,7 +129,7 @@ export const loginUser = async (email: string, pass: string): Promise<UserProfil
     }
   }
 
-  // Fallback Local Auth (quando supabase não estiver configurado)
+  // Fallback Local Auth
   const localProfile: UserProfile = {
     uid: `usr_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
     email: trimmedEmail,
@@ -175,27 +180,56 @@ export const registerUser = async (email: string, pass: string, name: string): P
   return localProfile;
 };
 
-export const loginWithGoogle = async (preferredEmail?: string): Promise<UserProfile> => {
-  const chosenEmail = (preferredEmail || '').trim().toLowerCase() || 'jeanpierreowner@gmail.com';
-  const isAdmin = ADMIN_EMAILS.includes(chosenEmail);
-  const role: 'admin' | 'customer' = isAdmin ? 'admin' : 'customer';
-  const defaultName = isAdmin ? 'Jean Pierre (Admin)' : (chosenEmail.split('@')[0] || 'Cliente');
+/**
+ * Real Google Login opening the native Google Account Selector popup screen
+ */
+export const loginWithGoogle = async (): Promise<UserProfile> => {
+  const provider = new GoogleAuthProvider();
+  // Force Google to display the Account Chooser / Selector Screen
+  provider.setCustomParameters({
+    prompt: 'select_account'
+  });
 
-  const profile: UserProfile = {
-    uid: `g_${chosenEmail.replace(/[^a-zA-Z0-9]/g, '_')}`,
-    email: chosenEmail,
-    name: defaultName,
-    role
-  };
+  try {
+    const result = await signInWithPopup(firebaseAuth, provider);
+    const fbUser = result.user;
+    const email = (fbUser.email || '').trim().toLowerCase();
+    const isAdmin = ADMIN_EMAILS.includes(email);
+    const role: 'admin' | 'customer' = isAdmin ? 'admin' : 'customer';
+    const displayName = fbUser.displayName || (isAdmin ? 'Jean Pierre (Admin)' : (email.split('@')[0] || 'Cliente'));
 
-  // Set session and save to Supabase DB immediately
-  setStoredSession(profile);
-  syncUserProfileToSupabase(profile);
+    const profile: UserProfile = {
+      uid: fbUser.uid,
+      email: fbUser.email || email,
+      name: displayName,
+      role,
+      photoURL: fbUser.photoURL || undefined
+    };
 
-  return profile;
+    setStoredSession(profile);
+    syncUserProfileToSupabase(profile);
+    return profile;
+  } catch (err: any) {
+    console.error('Google Sign-In Error:', err);
+    if (err.code === 'auth/popup-closed-by-user') {
+      throw new Error('A tela de seleção de conta Google foi fechada antes de concluir o login.');
+    }
+    if (err.code === 'auth/popup-blocked') {
+      throw new Error('A janela do Google foi bloqueada pelo navegador. Por favor, permita popups neste site para entrar com o Google.');
+    }
+    if (err.code === 'auth/cancelled-popup-request') {
+      throw new Error('Operação de login com o Google cancelada.');
+    }
+    throw new Error(err.message || 'Falha ao autenticar com a conta Google.');
+  }
 };
 
 export const logoutAppUser = async () => {
+  try {
+    await firebaseSignOut(firebaseAuth);
+  } catch (e) {
+    console.warn('Firebase signout notice:', e);
+  }
   if (supabase) {
     try {
       await supabase.auth.signOut();
@@ -213,6 +247,26 @@ export const listenAuthState = (callback: (user: UserProfile | null) => void) =>
   const current = getStoredSession();
   callback(current);
 
+  // Listen to Firebase Auth state
+  const unsubscribeFb = onFirebaseAuthStateChanged(firebaseAuth, (fbUser: FirebaseUser | null) => {
+    if (fbUser) {
+      const email = (fbUser.email || '').trim().toLowerCase();
+      const isAdmin = ADMIN_EMAILS.includes(email);
+      const role: 'admin' | 'customer' = isAdmin ? 'admin' : 'customer';
+      const displayName = fbUser.displayName || (isAdmin ? 'Jean Pierre (Admin)' : (email.split('@')[0] || 'Cliente'));
+
+      const profile: UserProfile = {
+        uid: fbUser.uid,
+        email: fbUser.email || email,
+        name: displayName,
+        role,
+        photoURL: fbUser.photoURL || undefined
+      };
+      setStoredSession(profile);
+      callback(profile);
+    }
+  });
+
   if (supabase) {
     const { data: authListener } = supabase.auth.onAuthStateChange(async (_event, session) => {
       if (session?.user) {
@@ -227,19 +281,13 @@ export const listenAuthState = (callback: (user: UserProfile | null) => void) =>
         };
         setStoredSession(profile);
         callback(profile);
-      } else {
-        // If logged out from supabase
-        const existing = getStoredSession();
-        if (existing && !existing.uid.startsWith('usr_')) {
-          setStoredSession(null);
-          callback(null);
-        }
       }
     });
 
     return () => {
       const idx = authListeners.indexOf(callback);
       if (idx >= 0) authListeners.splice(idx, 1);
+      unsubscribeFb();
       authListener.subscription.unsubscribe();
     };
   }
@@ -247,6 +295,7 @@ export const listenAuthState = (callback: (user: UserProfile | null) => void) =>
   return () => {
     const idx = authListeners.indexOf(callback);
     if (idx >= 0) authListeners.splice(idx, 1);
+    unsubscribeFb();
   };
 };
 
@@ -276,27 +325,36 @@ const LOCAL_POSTS_KEY = 'mundo_pipa_supabase_posts';
 const LOCAL_STORY_KEY = 'mundo_pipa_supabase_story';
 const LOCAL_CART_KEY = 'mundo_pipa_cart';
 
+const LEGACY_EXAMPLE_IDS = new Set([
+  'raia-40x40',
+  'linha-10-corrente',
+  'pipa-combate-60',
+  'carretilha-madeira-25',
+  'kit-iniciante',
+  'rabiola-fita-100m',
+  'varetas-bambu-50',
+  'kit-festival-master',
+]);
+
 export const getLocalProducts = (): Product[] => {
   try {
     const raw = localStorage.getItem(LOCAL_PRODUCTS_KEY);
     if (raw) {
       const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        return parsed;
+      if (Array.isArray(parsed)) {
+        // Filter out any legacy example products
+        const filtered = parsed.filter((p) => p && p.id && !LEGACY_EXAMPLE_IDS.has(p.id));
+        if (filtered.length !== parsed.length) {
+          localStorage.setItem(LOCAL_PRODUCTS_KEY, JSON.stringify(filtered));
+        }
+        return filtered;
       }
     }
   } catch (e) {
     console.warn('Error reading local products:', e);
   }
 
-  const initialList: Product[] = [
-    SHOPEE_PRODUCT_FIO10,
-    ...DEFAULT_PRODUCTS
-  ];
-  try {
-    localStorage.setItem(LOCAL_PRODUCTS_KEY, JSON.stringify(initialList));
-  } catch {}
-  return initialList;
+  return [];
 };
 
 export const setLocalProducts = (products: Product[]) => {
@@ -490,7 +548,7 @@ export const subscribeToSupabaseProducts = (onData: (products: Product[]) => voi
         .select('*')
         .order('created_at', { ascending: false });
 
-      if (!error && data && data.length > 0) {
+      if (!error && data) {
         const mapped = data.map(mapDbToProduct);
         setLocalProducts(mapped);
         onData(mapped);
