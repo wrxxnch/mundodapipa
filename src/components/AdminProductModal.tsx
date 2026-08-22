@@ -5,7 +5,7 @@ import {
   Sparkles, Video, AlertCircle, Youtube, ExternalLink, Package 
 } from 'lucide-react';
 import { Product, Category } from '../types';
-import { addProductToFirestore, updateProductInFirestore, deleteProductFromFirestore, deleteField } from '../lib/supabase';
+import { addProductToFirestore, updateProductInFirestore, deleteProductFromFirestore, deleteField } from '../lib/firebase';
 import { compressImageFile } from '../utils/imageCompressor';
 import { saveLocalVideo } from '../utils/mediaStore';
 import { SmartVideoPlayer } from './SmartVideoPlayer';
@@ -45,14 +45,12 @@ export const AdminProductModal: React.FC<AdminProductModalProps> = ({
   const [videoSource, setVideoSource] = useState<'device' | 'url'>('device');
   const [videoFileName, setVideoFileName] = useState<string | null>(null);
   const [isCompressingExtra, setIsCompressingExtra] = useState(false);
-  const [confirmDelete, setConfirmDelete] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const extraFileInputRef = useRef<HTMLInputElement>(null);
   const videoFileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    setConfirmDelete(false);
     if (productToEdit) {
       setName(productToEdit.name);
       setCategory(productToEdit.category);
@@ -284,17 +282,19 @@ export const AdminProductModal: React.FC<AdminProductModalProps> = ({
       setLoading(false);
     }
   };
- 
+
   const handleDelete = async () => {
     if (!productToEdit) return;
-    setLoading(true);
-    try {
-      await deleteProductFromFirestore(productToEdit.id);
-      onClose();
-    } catch (err: any) {
-      setError('Erro ao deletar produto: ' + err.message);
-    } finally {
-      setLoading(false);
+    if (window.confirm(`Tem certeza que deseja DELETAR o item "${productToEdit.name}" do catálogo?`)) {
+      setLoading(true);
+      try {
+        await deleteProductFromFirestore(productToEdit.id);
+        onClose();
+      } catch (err: any) {
+        setError('Erro ao deletar produto: ' + err.message);
+      } finally {
+        setLoading(false);
+      }
     }
   };
 
@@ -741,38 +741,17 @@ export const AdminProductModal: React.FC<AdminProductModalProps> = ({
           </div>
 
           {/* Submit & Actions */}
-          <div className="pt-4 border-t border-slate-200 flex flex-wrap items-center justify-between gap-3">
+          <div className="pt-4 border-t border-slate-200 flex items-center justify-between gap-4">
             {productToEdit ? (
-              confirmDelete ? (
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={handleDelete}
-                    disabled={loading}
-                    className="bg-red-600 hover:bg-red-700 text-white font-extrabold text-xs px-4 py-3 rounded-xl shadow flex items-center gap-1.5 transition-colors"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                    <span>{loading ? 'Deletando...' : 'Confirmar Exclusão'}</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setConfirmDelete(false)}
-                    className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs px-3 py-3 rounded-xl"
-                  >
-                    Cancelar
-                  </button>
-                </div>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => setConfirmDelete(true)}
-                  disabled={loading}
-                  className="bg-red-50 hover:bg-red-100 text-red-600 font-extrabold text-xs px-4 py-3 rounded-xl border border-red-200 flex items-center gap-1.5 transition-colors"
-                >
-                  <Trash2 className="w-4 h-4" />
-                  <span>Deletar Item</span>
-                </button>
-              )
+              <button
+                type="button"
+                onClick={handleDelete}
+                disabled={loading}
+                className="bg-red-50 hover:bg-red-100 text-red-600 font-extrabold text-xs px-4 py-3 rounded-xl border border-red-200 flex items-center gap-1.5 transition-colors"
+              >
+                <Trash2 className="w-4 h-4" />
+                <span>Deletar Item</span>
+              </button>
             ) : <div />}
 
             <div className="flex items-center gap-3">

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { X, Lock, Mail, User, ShieldCheck, ArrowRight, AlertCircle } from 'lucide-react';
-import { loginUser, registerUser, loginWithGoogle, UserProfile } from '../lib/supabase';
+import { loginUser, registerUser, loginWithGoogle, UserProfile } from '../lib/firebase';
 
 interface AuthModalProps {
   isOpen: boolean;
@@ -66,7 +66,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       onLoginSuccess(user);
       onClose();
     } catch (err: any) {
-      setError(err.message || 'Falha ao autenticar com a conta Google');
+      setError('Erro ao entrar com Google: ' + (err.message || 'Falha na autenticação'));
     } finally {
       setLoading(false);
     }
@@ -229,7 +229,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
           <div className="mt-4 p-3 bg-slate-50 rounded-xl border border-slate-200 text-center">
             <p className="text-[11px] font-bold text-slate-600">
-              🔒 O perfil (Administrador ou Cliente) é definido automaticamente pelo banco de dados Supabase através do e-mail cadastrado.
+              🔒 O perfil (Administrador ou Cliente) é definido automaticamente pelo Firebase no banco de dados através do e-mail cadastrado.
             </p>
           </div>
 

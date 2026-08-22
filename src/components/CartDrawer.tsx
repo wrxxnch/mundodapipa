@@ -3,7 +3,7 @@ import { X, Trash2, ShoppingBag, ExternalLink, MessageCircle, Truck, ArrowRight,
 import { CartItem } from '../types';
 import { SHOPEE_STORE_URL, WHATSAPP_NUMBER } from '../data/products';
 import { ShippingCalculator, ShippingOption } from './ShippingCalculator';
-import { UserProfile } from '../lib/supabase';
+import { UserProfile } from '../lib/firebase';
 
 interface CartDrawerProps {
   isOpen: boolean;

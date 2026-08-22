@@ -50,29 +50,3 @@ export interface Post {
   createdAt: string;
 }
 
-export interface StoryContent {
-  badge: string;
-  title: string;
-  paragraph1: string;
-  paragraph2: string;
-  stat1Value?: string;
-  stat1Label?: string;
-  stat2Value?: string;
-  stat2Label?: string;
-  value1Title?: string;
-  value1Desc?: string;
-  value2Title?: string;
-  value2Desc?: string;
-  value3Title?: string;
-  value3Desc?: string;
-}
-
-export interface UserProfile {
-  uid: string;
-  email: string;
-  name: string;
-  role: 'admin' | 'customer';
-  photoURL?: string;
-}
-
-

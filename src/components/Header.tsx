@@ -3,7 +3,7 @@ import { ShoppingBag, Search, ExternalLink, ShieldCheck, Truck, Sparkles, X, Use
 import { Category } from '../types';
 import logoImg from '../assets/images/logo.png';
 import { SHOPEE_STORE_URL } from '../data/products';
-import { UserProfile } from '../lib/supabase';
+import { UserProfile } from '../lib/firebase';
 
 interface HeaderProps {
   activeCategory: Category;

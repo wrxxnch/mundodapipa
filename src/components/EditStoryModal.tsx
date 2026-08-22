@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { X, Save, RotateCcw, Sparkles, BookOpen, Award, Heart, Flag } from 'lucide-react';
-import { StoryContent, DEFAULT_STORY_CONTENT, saveStoryContent } from '../lib/supabase';
+import { StoryContent, DEFAULT_STORY_CONTENT, saveStoryContent } from '../lib/firebase';
 
 interface EditStoryModalProps {
   isOpen: boolean;
@@ -33,7 +33,9 @@ export const EditStoryModal: React.FC<EditStoryModalProps> = ({
   };
 
   const handleResetDefault = () => {
-    setFormData(DEFAULT_STORY_CONTENT);
+    if (window.confirm('Deseja restaurar o texto e os destaques originais de fábrica?')) {
+      setFormData(DEFAULT_STORY_CONTENT);
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {

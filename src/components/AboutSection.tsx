@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Award, Heart, Sparkles, Flag, Edit3 } from 'lucide-react';
 import logoImg from '../assets/images/logo.png';
-import { StoryContent, DEFAULT_STORY_CONTENT, subscribeToStoryContent } from '../lib/supabase';
+import { StoryContent, DEFAULT_STORY_CONTENT, subscribeToStoryContent } from '../lib/firebase';
 import { EditStoryModal } from './EditStoryModal';
 
 interface AboutSectionProps {
