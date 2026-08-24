@@ -56,6 +56,9 @@ export const Footer: React.FC = () => {
               <li>
                 <a href="#historia" className="hover:text-amber-400 transition-colors">Nossa História</a>
               </li>
+              <li>
+                <a href="#posts" className="hover:text-amber-400 transition-colors">Mural de Posts (Firebase)</a>
+              </li>
             </ul>
           </div>
 

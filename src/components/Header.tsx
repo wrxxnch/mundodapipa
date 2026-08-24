@@ -211,6 +211,24 @@ export const Header: React.FC<HeaderProps> = ({
               </button>
             );
           })}
+
+          <div className="h-4 w-px bg-slate-700 mx-1"></div>
+
+          <a
+            href="#posts"
+            className="px-3.5 py-1.5 rounded-full text-xs font-black uppercase tracking-wide text-sky-400 hover:text-sky-300 hover:bg-sky-950/40 border border-sky-500/30 transition-all flex items-center gap-1.5"
+          >
+            <span>📰</span>
+            <span>Mural de Posts (Firebase)</span>
+          </a>
+
+          <a
+            href="#historia"
+            className="px-3.5 py-1.5 rounded-full text-xs font-bold uppercase tracking-wide text-slate-300 hover:text-white hover:bg-slate-800 transition-all flex items-center gap-1.5"
+          >
+            <span>📜</span>
+            <span>Nossa História</span>
+          </a>
         </div>
       </div>
     </header>

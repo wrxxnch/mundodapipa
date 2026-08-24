@@ -25,5 +25,9 @@ service cloud.firestore {
     match /carts/{userId} {
       allow read, write: if true;
     }
+
+    match /test/{testId} {
+      allow read, write: if true;
+    }
   }
 }

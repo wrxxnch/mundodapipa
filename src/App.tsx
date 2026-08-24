@@ -6,6 +6,7 @@ import { ProductCard } from './components/ProductCard';
 import { ProductModal } from './components/ProductModal';
 import { CartDrawer } from './components/CartDrawer';
 import { AboutSection } from './components/AboutSection';
+import { CommunityPostsSection } from './components/CommunityPostsSection';
 import { ReviewsSection } from './components/ReviewsSection';
 import { Footer } from './components/Footer';
 
@@ -120,7 +121,8 @@ export default function App() {
   }, []);
 
   // Real-time Firestore Cart Sync per User (or LocalStorage fallback for guests)
-  const isInitialUserSync = React.useRef(true);
+  const lastSyncedCartJson = React.useRef<string>('');
+  const isUpdatingFromRemote = React.useRef<boolean>(false);
 
   useEffect(() => {
     if (!user?.uid) {
@@ -135,35 +137,40 @@ export default function App() {
     }
 
     // Logged-in mode: subscribe to user's cart in Firestore
-    isInitialUserSync.current = true;
     const unsubscribe = subscribeToUserCart(user.uid, (firestoreItems) => {
-      setCartItems((currentItems) => {
-        if (firestoreItems && firestoreItems.length > 0) {
-          return firestoreItems;
-        }
-        if (isInitialUserSync.current && currentItems.length > 0) {
-          saveUserCartToFirestore(user.uid, currentItems);
-          return currentItems;
-        }
-        return firestoreItems || [];
-      });
-      isInitialUserSync.current = false;
+      if (firestoreItems && Array.isArray(firestoreItems)) {
+        const json = JSON.stringify(firestoreItems);
+        lastSyncedCartJson.current = json;
+        isUpdatingFromRemote.current = true;
+        setCartItems(firestoreItems);
+      }
     });
 
     return () => unsubscribe();
   }, [user?.uid]);
 
-  // Save cart changes to Firestore (if logged in) and localStorage
+  // Save cart changes to Firestore (if logged in and changed by user) and localStorage
   useEffect(() => {
+    const currentJson = JSON.stringify(cartItems);
+
     if (user?.uid) {
-      saveUserCartToFirestore(user.uid, cartItems);
       try {
-        localStorage.setItem(`mundo_pipa_cart_${user.uid}`, JSON.stringify(cartItems));
+        localStorage.setItem(`mundo_pipa_cart_${user.uid}`, currentJson);
       } catch (e) {}
+
+      if (isUpdatingFromRemote.current) {
+        isUpdatingFromRemote.current = false;
+        return;
+      }
+
+      if (lastSyncedCartJson.current !== currentJson) {
+        lastSyncedCartJson.current = currentJson;
+        saveUserCartToFirestore(user.uid, cartItems);
+      }
     } else {
       try {
-        localStorage.setItem('mundo_pipa_cart_guest', JSON.stringify(cartItems));
-        localStorage.setItem('mundo_pipa_cart', JSON.stringify(cartItems));
+        localStorage.setItem('mundo_pipa_cart_guest', currentJson);
+        localStorage.setItem('mundo_pipa_cart', currentJson);
       } catch (e) {}
     }
   }, [cartItems, user?.uid]);
@@ -419,6 +426,9 @@ export default function App() {
         <div id="historia">
           <AboutSection isAdmin={user?.role === 'admin'} />
         </div>
+
+        {/* Community & Public Posts Section (Direct Firebase Firestore) */}
+        <CommunityPostsSection user={user} />
 
         {/* Customer Reviews Section */}
         <ReviewsSection />

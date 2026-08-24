@@ -10,7 +10,10 @@ import {
   updateDoc, 
   deleteDoc, 
   deleteField,
-  onSnapshot
+  onSnapshot,
+  getDocFromServer,
+  query,
+  orderBy
 } from 'firebase/firestore';
 import { 
   getAuth, 
@@ -35,6 +38,84 @@ export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId || undefi
 export const auth = getAuth(app);
 export { deleteField };
 
+// Quota and connection state management
+export let isFirestoreQuotaExhausted = false;
+
+export const checkIsQuotaError = (err: any): boolean => {
+  if (!err) return false;
+  const code = err?.code || '';
+  const msg = err?.message || String(err);
+  return (
+    code === 'resource-exhausted' ||
+    msg.includes('resource-exhausted') ||
+    msg.includes('Quota limit exceeded') ||
+    msg.includes('Free daily write units')
+  );
+};
+
+export const markQuotaExhausted = (err?: any) => {
+  if (err && checkIsQuotaError(err)) {
+    isFirestoreQuotaExhausted = true;
+  }
+};
+
+// Skill requirement: Firestore Error Handling
+export enum OperationType {
+  CREATE = 'create',
+  UPDATE = 'update',
+  DELETE = 'delete',
+  LIST = 'list',
+  GET = 'get',
+  WRITE = 'write',
+}
+
+export interface FirestoreErrorInfo {
+  error: string;
+  operationType: OperationType;
+  path: string | null;
+  authInfo: {
+    userId?: string | null;
+    email?: string | null;
+    emailVerified?: boolean | null;
+    isAnonymous?: boolean | null;
+    tenantId?: string | null;
+    providerInfo?: {
+      providerId?: string | null;
+      email?: string | null;
+    }[];
+  };
+}
+
+export function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
+  markQuotaExhausted(error);
+  const errMsg = error instanceof Error ? error.message : String(error);
+  
+  const errInfo: FirestoreErrorInfo = {
+    error: errMsg,
+    authInfo: {
+      userId: auth.currentUser?.uid,
+      email: auth.currentUser?.email,
+      emailVerified: auth.currentUser?.emailVerified,
+      isAnonymous: auth.currentUser?.isAnonymous,
+      tenantId: auth.currentUser?.tenantId,
+      providerInfo: auth.currentUser?.providerData?.map(provider => ({
+        providerId: provider.providerId,
+        email: provider.email,
+      })) || []
+    },
+    operationType,
+    path
+  };
+
+  if (checkIsQuotaError(error)) {
+    console.warn('[Firestore Quota Notice]: Limite de cota diária gratuita do Firebase atingido. O app continuará operando com segurança.', JSON.stringify(errInfo));
+  } else {
+    console.error('Firestore Error: ', JSON.stringify(errInfo));
+  }
+  
+  throw new Error(JSON.stringify(errInfo));
+}
+
 export interface UserProfile {
   uid: string;
   email: string;
@@ -48,12 +129,9 @@ const ADMIN_EMAILS = [
 ];
 
 const LOCAL_PRODUCTS_CACHE_KEY = 'mundo_pipa_products_cache';
-let isFirestoreQuotaExhausted = false;
 
 const handleQuotaExhausted = (err: any) => {
-  if (err?.code === 'resource-exhausted' || err?.message?.includes('resource-exhausted') || err?.message?.includes('Quota limit exceeded')) {
-    isFirestoreQuotaExhausted = true;
-  }
+  markQuotaExhausted(err);
 };
 
 // Local product storage helper
@@ -123,7 +201,7 @@ export const cleanFirestoreData = (obj: any): any => {
 let hasAttemptedSeed = false;
 
 export const initializeProductsSeed = async () => {
-  if (hasAttemptedSeed) return;
+  if (hasAttemptedSeed || isFirestoreQuotaExhausted) return;
   hasAttemptedSeed = true;
 
   try {
@@ -139,8 +217,8 @@ export const initializeProductsSeed = async () => {
       await setDoc(docRef, sanitized);
     }
   } catch (error: any) {
-    // Gracefully ignore quota limit on free tier
-    if (error?.code !== 'resource-exhausted') {
+    markQuotaExhausted(error);
+    if (!checkIsQuotaError(error)) {
       console.warn('Firestore seed notice:', error?.message || error);
     }
   }
@@ -158,6 +236,7 @@ export const registerShopeeItemDirectly = async () => {
   setLocalProducts(current);
 
   // Sync to Firestore in background
+  if (isFirestoreQuotaExhausted) return;
   try {
     const productsRef = collection(db, 'products');
     const docRef = doc(productsRef, SHOPEE_PRODUCT_FIO10.id);
@@ -167,7 +246,8 @@ export const registerShopeeItemDirectly = async () => {
     });
     await setDoc(docRef, sanitized, { merge: true });
   } catch (err: any) {
-    if (err?.code !== 'resource-exhausted') {
+    markQuotaExhausted(err);
+    if (!checkIsQuotaError(err)) {
       console.warn('Firestore sync note:', err?.message || err);
     }
   }
@@ -656,77 +736,111 @@ export const subscribeToStoryContent = (onData: (content: StoryContent) => void)
   }
 };
 
-// ==========================================
-// Community & Public Posts System (Firestore)
-// ==========================================
-const LOCAL_POSTS_CACHE_KEY = 'mundo_pipa_posts_cache';
-const postListeners: ((posts: Post[]) => void)[] = [];
+// =========================================================
+// Community & Public Posts System (Pure Firebase Firestore)
+// =========================================================
 
-const getLocalPosts = (): Post[] => {
+// Clean any legacy local storage posts key
+try {
+  if (typeof window !== 'undefined' && window.localStorage) {
+    localStorage.removeItem('mundo_pipa_posts_cache');
+  }
+} catch {}
+
+/**
+ * Fetch all posts directly from Firebase Firestore
+ */
+export const getPostsFromFirestore = async (): Promise<Post[]> => {
+  const path = 'posts';
   try {
-    const raw = localStorage.getItem(LOCAL_POSTS_CACHE_KEY);
-    if (raw) return JSON.parse(raw);
-  } catch {}
-  return [];
+    const postsRef = collection(db, path);
+    const snapshot = await getDocs(postsRef);
+    const postsList: Post[] = [];
+    snapshot.forEach((docSnap) => {
+      const data = docSnap.data();
+      postsList.push({
+        id: docSnap.id,
+        title: data.title || '',
+        content: data.content || '',
+        author: data.author || 'Mundo da Pipa',
+        authorId: data.authorId || '',
+        imageUrl: data.imageUrl || '',
+        videoUrl: data.videoUrl || '',
+        createdAt: data.createdAt || new Date().toISOString()
+      });
+    });
+    // Order latest first
+    postsList.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    return postsList;
+  } catch (error) {
+    handleFirestoreError(error, OperationType.GET, path);
+    return [];
+  }
 };
 
-const setLocalPosts = (posts: Post[]) => {
-  try {
-    localStorage.setItem(LOCAL_POSTS_CACHE_KEY, JSON.stringify(posts));
-  } catch {}
-  postListeners.forEach(fn => {
-    try { fn(posts); } catch {}
-  });
-};
-
-export const addPostToFirestore = async (newPost: Partial<Post>) => {
+/**
+ * Add a new post directly to Firebase Firestore
+ */
+export const addPostToFirestore = async (newPost: Partial<Post>): Promise<string> => {
   const id = newPost.id || `post_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
   const postData: Post = {
     id,
-    title: newPost.title || '',
-    content: newPost.content || '',
-    author: newPost.author || 'Mundo da Pipa',
-    authorId: newPost.authorId || '',
-    imageUrl: newPost.imageUrl || '',
-    videoUrl: newPost.videoUrl || '',
+    title: newPost.title?.trim() || '',
+    content: newPost.content?.trim() || '',
+    author: newPost.author?.trim() || 'Mundo da Pipa',
+    authorId: newPost.authorId || auth.currentUser?.uid || '',
+    imageUrl: newPost.imageUrl?.trim() || '',
+    videoUrl: newPost.videoUrl?.trim() || '',
     createdAt: newPost.createdAt || new Date().toISOString()
   };
 
-  // 1. Local update
-  const current = getLocalPosts();
-  const updated = [postData, ...current.filter(p => p.id !== id)];
-  setLocalPosts(updated);
-
-  // 2. Direct Firestore persistence
+  const path = `posts/${id}`;
   try {
     const postRef = doc(db, 'posts', id);
     await setDoc(postRef, cleanFirestoreData(postData), { merge: true });
-  } catch (err: any) {
-    console.warn('Firestore post save notice:', err?.message || err);
+    return id;
+  } catch (error) {
+    handleFirestoreError(error, OperationType.CREATE, path);
+    return id;
   }
-
-  return id;
 };
 
-export const deletePostFromFirestore = async (postId: string) => {
-  const current = getLocalPosts();
-  const updated = current.filter(p => p.id !== postId);
-  setLocalPosts(updated);
+/**
+ * Update an existing post directly in Firebase Firestore
+ */
+export const updatePostInFirestore = async (postId: string, updates: Partial<Post>): Promise<void> => {
+  const path = `posts/${postId}`;
+  try {
+    const postRef = doc(db, 'posts', postId);
+    await updateDoc(postRef, cleanFirestoreData(updates));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, path);
+  }
+};
 
+/**
+ * Delete a post directly from Firebase Firestore
+ */
+export const deletePostFromFirestore = async (postId: string): Promise<void> => {
+  const path = `posts/${postId}`;
   try {
     const postRef = doc(db, 'posts', postId);
     await deleteDoc(postRef);
-  } catch (err: any) {
-    console.warn('Firestore post delete notice:', err?.message || err);
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, path);
   }
 };
 
-export const subscribeToPosts = (onData: (posts: Post[]) => void) => {
-  postListeners.push(onData);
-  onData(getLocalPosts());
-
+/**
+ * Subscribe to posts in real-time from Firebase Firestore without any local storage
+ */
+export const subscribeToPosts = (
+  onData: (posts: Post[]) => void,
+  onError?: (err: Error) => void
+) => {
+  const path = 'posts';
   try {
-    const postsRef = collection(db, 'posts');
+    const postsRef = collection(db, path);
     const unsubscribe = onSnapshot(
       postsRef,
       (snapshot) => {
@@ -747,24 +861,25 @@ export const subscribeToPosts = (onData: (posts: Post[]) => void) => {
 
         // Sort latest first
         postsList.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-        setLocalPosts(postsList);
         onData(postsList);
       },
-      (err) => {
-        console.warn('Firestore posts snapshot notice:', err?.message || err);
+      (error) => {
+        try {
+          handleFirestoreError(error, OperationType.GET, path);
+        } catch (wrappedErr: any) {
+          if (onError) onError(wrappedErr);
+        }
       }
     );
 
-    return () => {
-      const idx = postListeners.indexOf(onData);
-      if (idx >= 0) postListeners.splice(idx, 1);
-      try { unsubscribe(); } catch {}
-    };
-  } catch {
-    return () => {
-      const idx = postListeners.indexOf(onData);
-      if (idx >= 0) postListeners.splice(idx, 1);
-    };
+    return unsubscribe;
+  } catch (error) {
+    try {
+      handleFirestoreError(error, OperationType.GET, path);
+    } catch (wrappedErr: any) {
+      if (onError) onError(wrappedErr);
+    }
+    return () => {};
   }
 };
 
