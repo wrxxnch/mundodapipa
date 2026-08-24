@@ -18,6 +18,7 @@ import { Category, Product, CartItem } from './types';
 import { PRODUCTS as DEFAULT_PRODUCTS } from './data/products';
 import { 
   subscribeToProducts, 
+  getProductsFromFirestore,
   listenAuthState, 
   logoutAppUser, 
   deleteProductFromFirestore,
@@ -100,7 +101,26 @@ export default function App() {
     const unsubscribe = subscribeToProducts((realtimeProducts) => {
       setProducts(realtimeProducts);
     });
-    return () => unsubscribe();
+
+    // Re-check Firestore whenever user returns to or focuses the tab/app
+    const handleSyncOnFocus = () => {
+      if (document.visibilityState === 'visible') {
+        getProductsFromFirestore().then((items) => {
+          if (items && items.length > 0) {
+            setProducts(items);
+          }
+        }).catch(() => {});
+      }
+    };
+
+    window.addEventListener('focus', handleSyncOnFocus);
+    document.addEventListener('visibilitychange', handleSyncOnFocus);
+
+    return () => {
+      unsubscribe();
+      window.removeEventListener('focus', handleSyncOnFocus);
+      document.removeEventListener('visibilitychange', handleSyncOnFocus);
+    };
   }, []);
 
   const handleRegisterShopeeItem = async () => {

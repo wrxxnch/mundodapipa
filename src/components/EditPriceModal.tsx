@@ -84,10 +84,11 @@ export const EditPriceModal: React.FC<EditPriceModalProps> = ({
         updates.stockQuantity = deleteField();
       }
 
-      updateProductInFirestore(product.id, updates).catch(e => console.warn('Background sync:', e));
+      await updateProductInFirestore(product.id, updates);
       onClose();
     } catch (err: any) {
-      setError('Erro ao atualizar dados: ' + err.message);
+      setError('Erro ao atualizar dados: ' + (err?.message || 'Tente novamente'));
+    } finally {
       setLoading(false);
     }
   };

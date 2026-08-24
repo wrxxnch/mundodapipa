@@ -267,11 +267,9 @@ export const AdminProductModal: React.FC<AdminProductModalProps> = ({
       }
 
       if (productToEdit) {
-        // Instant local update + non-blocking cloud sync
-        updateProductInFirestore(productToEdit.id, productData).catch(e => console.warn('Background sync:', e));
+        await updateProductInFirestore(productToEdit.id, productData);
       } else {
-        // Instant local add + non-blocking cloud sync
-        addProductToFirestore(productData).catch(e => console.warn('Background sync:', e));
+        await addProductToFirestore(productData);
       }
 
       // Close modal immediately
@@ -279,6 +277,7 @@ export const AdminProductModal: React.FC<AdminProductModalProps> = ({
     } catch (err: any) {
       console.error('Error saving product:', err);
       setError('Erro ao salvar produto: ' + (err.message || 'Tente novamente'));
+    } finally {
       setLoading(false);
     }
   };

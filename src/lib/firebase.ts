@@ -165,7 +165,7 @@ const notifyProductSubscribers = (products: Product[]) => {
   });
 };
 
-// Utility to recursively strip all undefined fields for Firestore safety
+// Utility to recursively strip all undefined and null fields for Firestore safety
 export const cleanFirestoreData = (obj: any): any => {
   if (obj === null || obj === undefined) return undefined;
   
@@ -176,15 +176,20 @@ export const cleanFirestoreData = (obj: any): any => {
   }
   
   if (typeof obj === 'object') {
-    // Keep Firestore FieldValues like deleteField() or serverTimestamp() intact
-    if (obj._methodName || (obj.constructor && obj.constructor.name === 'FieldValue')) {
+    // Preserve Firestore FieldValues (like deleteField() or serverTimestamp())
+    if (
+      obj._methodName ||
+      (obj.constructor && obj.constructor.name?.includes('FieldValue')) ||
+      (obj.constructor && obj.constructor.name?.includes('Delete')) ||
+      '_delegate' in obj
+    ) {
       return obj;
     }
     
     const cleaned: Record<string, any> = {};
     for (const key of Object.keys(obj)) {
       const val = obj[key];
-      if (val !== undefined) {
+      if (val !== undefined && val !== null) {
         const cleanedVal = cleanFirestoreData(val);
         if (cleanedVal !== undefined) {
           cleaned[key] = cleanedVal;
@@ -195,6 +200,54 @@ export const cleanFirestoreData = (obj: any): any => {
   }
   
   return obj;
+};
+
+export const parseFirestoreProduct = (id: string, data: any): Product => {
+  const priceNum = Number(data.price) || 0;
+  const origPriceNum = data.originalPrice != null && Number(data.originalPrice) > 0 ? Number(data.originalPrice) : undefined;
+  const stockQtyNum = data.stockQuantity != null && !isNaN(Number(data.stockQuantity)) ? Number(data.stockQuantity) : undefined;
+  const salesCountNum = data.salesCount != null && Number(data.salesCount) > 0 ? Number(data.salesCount) : undefined;
+
+  return {
+    id,
+    name: data.name || '',
+    category: data.category || 'pipas',
+    price: priceNum,
+    originalPrice: origPriceNum,
+    image: data.image || 'https://images.unsplash.com/photo-1534447677768-be436bb09401?auto=format&fit=crop&w=600&q=80',
+    images: Array.isArray(data.images) && data.images.length > 0 ? data.images : (data.image ? [data.image] : undefined),
+    videoUrl: data.videoUrl || undefined,
+    videos: Array.isArray(data.videos) ? data.videos : undefined,
+    description: data.description || '',
+    specs: Array.isArray(data.specs) ? data.specs : [],
+    inStock: data.inStock !== false && (stockQtyNum === undefined || stockQtyNum > 0),
+    stockQuantity: stockQtyNum,
+    shopeeUrl: data.shopeeUrl || 'https://shopee.com.br/mundo_da_pipa',
+    badge: data.badge || undefined,
+    rating: Number(data.rating) || 5.0,
+    salesCount: salesCountNum,
+    reviews: Array.isArray(data.reviews) ? data.reviews : (SHOPEE_PRODUCT_FIO10.reviews || [])
+  };
+};
+
+// Direct Firestore fetch
+export const getProductsFromFirestore = async (): Promise<Product[]> => {
+  const path = 'products';
+  try {
+    const productsRef = collection(db, path);
+    const snapshot = await getDocs(productsRef);
+    if (snapshot.empty) {
+      return [];
+    }
+    const productsList: Product[] = [];
+    snapshot.forEach((docSnap) => {
+      productsList.push(parseFirestoreProduct(docSnap.id, docSnap.data()));
+    });
+    return productsList;
+  } catch (error) {
+    handleFirestoreError(error, OperationType.GET, path);
+    return [];
+  }
 };
 
 // Seed guard to prevent repeated requests
@@ -253,16 +306,37 @@ export const registerShopeeItemDirectly = async () => {
   }
 };
 
-// Listen to products in real-time with resilient offline/quota fallback
-export const subscribeToProducts = (onData: (products: Product[]) => void) => {
+// Listen to products in real-time across all devices
+export const subscribeToProducts = (
+  onData: (products: Product[]) => void,
+  onError?: (err: Error) => void
+) => {
   productListeners.push(onData);
 
-  // Immediately provide cached products
+  // 1. Immediately provide cached products
   const cached = getLocalProducts();
-  onData(cached);
+  if (cached && cached.length > 0) {
+    onData(cached);
+  }
 
-  // Background check for seed
-  initializeProductsSeed().catch(() => {});
+  // 2. Fetch fresh live data from Firestore
+  getProductsFromFirestore()
+    .then((liveProducts) => {
+      if (liveProducts && liveProducts.length > 0) {
+        setLocalProducts(liveProducts);
+        onData(liveProducts);
+      } else if (!cached || cached.length === 0) {
+        initializeProductsSeed().then(() => {
+          getProductsFromFirestore().then(p => {
+            if (p.length > 0) {
+              setLocalProducts(p);
+              onData(p);
+            }
+          });
+        }).catch(() => {});
+      }
+    })
+    .catch(() => {});
 
   let unsubscribeFirestore = () => {};
 
@@ -272,47 +346,31 @@ export const subscribeToProducts = (onData: (products: Product[]) => void) => {
       productsRef,
       (snapshot) => {
         if (snapshot.empty) {
-          onData(cached);
           return;
         }
         const productsList: Product[] = [];
         snapshot.forEach((docSnap) => {
-          const data = docSnap.data();
-          productsList.push({
-            id: docSnap.id,
-            name: data.name || '',
-            category: data.category || 'pipas',
-            price: Number(data.price) || 0,
-            originalPrice: data.originalPrice && Number(data.originalPrice) > (Number(data.price) || 0) ? Number(data.originalPrice) : undefined,
-            image: data.image || 'https://images.unsplash.com/photo-1534447677768-be436bb09401?auto=format&fit=crop&w=600&q=80',
-            images: Array.isArray(data.images) ? data.images : undefined,
-            videoUrl: data.videoUrl || undefined,
-            videos: Array.isArray(data.videos) ? data.videos : undefined,
-            description: data.description || '',
-            specs: Array.isArray(data.specs) ? data.specs : [],
-            inStock: data.inStock !== false,
-            shopeeUrl: data.shopeeUrl || 'https://shopee.com.br/mundo_da_pipa',
-            badge: data.badge || undefined,
-            rating: Number(data.rating) || 5.0,
-            salesCount: data.salesCount != null && Number(data.salesCount) > 0 ? Number(data.salesCount) : undefined,
-            reviews: Array.isArray(data.reviews) ? data.reviews : SHOPEE_PRODUCT_FIO10.reviews
-          });
+          productsList.push(parseFirestoreProduct(docSnap.id, docSnap.data()));
         });
 
-        // Update local cache and notify
-        try {
-          localStorage.setItem(LOCAL_PRODUCTS_CACHE_KEY, JSON.stringify(productsList));
-        } catch {}
+        // Update local storage cache & notify all components
+        setLocalProducts(productsList);
         onData(productsList);
       },
       (error) => {
-        // When quota is exhausted or offline, continue seamlessly with local cache
-        const fallback = getLocalProducts();
-        onData(fallback);
+        try {
+          handleFirestoreError(error, OperationType.GET, 'products');
+        } catch (wrappedErr: any) {
+          if (onError) onError(wrappedErr);
+        }
       }
     );
-  } catch {
-    onData(cached);
+  } catch (error) {
+    try {
+      handleFirestoreError(error, OperationType.GET, 'products');
+    } catch (wrappedErr: any) {
+      if (onError) onError(wrappedErr);
+    }
   }
 
   return () => {
@@ -340,8 +398,8 @@ export const clearAllProductsFromFirestore = async () => {
   }
 };
 
-// Admin operations (Hybrid Local-First + Immediate Firestore Persistence)
-export const addProductToFirestore = async (newProduct: Partial<Product> | Record<string, any>) => {
+// Admin operations (Real-time Cloud + Immediate Multi-device Persistence)
+export const addProductToFirestore = async (newProduct: Partial<Product> | Record<string, any>): Promise<string> => {
   const newId = newProduct.id || `prod_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
   const productToSave: Product = {
     id: newId,
@@ -369,64 +427,74 @@ export const addProductToFirestore = async (newProduct: Partial<Product> | Recor
   const updatedList = [productToSave, ...currentList.filter(p => p.id !== newId)];
   setLocalProducts(updatedList);
 
-  // 2. Direct Firestore write (public for all users)
+  // 2. Direct Firestore write (persisted in cloud for all devices)
+  const path = `products/${newId}`;
   try {
-    const productsRef = collection(db, 'products');
-    const docRef = doc(productsRef, newId);
+    const docRef = doc(db, 'products', newId);
     const sanitized = cleanFirestoreData({
       ...productToSave,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
     });
-    await setDoc(docRef, sanitized, { merge: true });
-  } catch (err: any) {
-    console.warn('Firestore add product notice:', err?.message || err);
+    await setDoc(docRef, sanitized);
+    return newId;
+  } catch (error) {
+    handleFirestoreError(error, OperationType.CREATE, path);
+    return newId;
   }
-
-  return newId;
 };
 
-export const updateProductInFirestore = async (id: string, updates: Record<string, any>) => {
+export const updateProductInFirestore = async (id: string, updates: Record<string, any>): Promise<void> => {
   // 1. Immediately update local cache & notify UI
   const currentList = getLocalProducts();
   const index = currentList.findIndex(p => p.id === id);
+  let mergedProduct: any = {};
+  
   if (index >= 0) {
-    const updated = { ...currentList[index], ...updates };
-    // Handle deleteField cleanup locally
+    mergedProduct = { ...currentList[index] };
     Object.keys(updates).forEach(k => {
-      if (updates[k] && updates[k]._methodName === 'deleteField') {
-        delete (updated as any)[k];
+      if (
+        updates[k] === undefined || 
+        (updates[k] && (updates[k]._methodName === 'deleteField' || updates[k].constructor?.name?.includes('Delete')))
+      ) {
+        delete mergedProduct[k];
+      } else {
+        mergedProduct[k] = updates[k];
       }
     });
-    currentList[index] = updated;
+    currentList[index] = mergedProduct;
     setLocalProducts([...currentList]);
+  } else {
+    mergedProduct = { id, ...updates };
   }
 
-  // 2. Direct Firestore write (public for all users)
+  // 2. Direct Firestore write (public for all connected devices)
+  const path = `products/${id}`;
   try {
     const docRef = doc(db, 'products', id);
     const sanitized = cleanFirestoreData({
-      ...updates,
+      ...mergedProduct,
       updatedAt: new Date().toISOString()
     });
-    await setDoc(docRef, sanitized, { merge: true });
-  } catch (err: any) {
-    console.warn('Firestore update product notice:', err?.message || err);
+    await setDoc(docRef, sanitized);
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, path);
   }
 };
 
-export const deleteProductFromFirestore = async (id: string) => {
+export const deleteProductFromFirestore = async (id: string): Promise<void> => {
   // 1. Immediately remove from local cache & notify UI
   const currentList = getLocalProducts();
   const filtered = currentList.filter(p => p.id !== id);
   setLocalProducts(filtered);
 
   // 2. Direct Firestore delete
+  const path = `products/${id}`;
   try {
     const docRef = doc(db, 'products', id);
     await deleteDoc(docRef);
-  } catch (err: any) {
-    console.warn('Firestore delete product notice:', err?.message || err);
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, path);
   }
 };
 
