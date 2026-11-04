@@ -7,6 +7,15 @@ const DB_NAME = 'mundo_da_pipa_media_db';
 const DB_VERSION = 1;
 const STORE_NAME = 'videos';
 
+export function fileToDataUrl(file: File | Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = (err) => reject(err);
+    reader.readAsDataURL(file);
+  });
+}
+
 function openDB(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     if (typeof window === 'undefined' || !window.indexedDB) {
@@ -83,65 +92,110 @@ export async function resolveVideoUrl(videoUrlOrRef: string): Promise<string> {
 }
 
 /**
- * Formats video links into embeddable / playable URLs:
- * - YouTube standard: youtube.com/watch?v=ID -> youtube.com/embed/ID
- * - YouTube Shorts: youtube.com/shorts/ID -> youtube.com/embed/ID
- * - YouTube short link: youtu.be/ID -> youtube.com/embed/ID
- * - Vimeo: vimeo.com/ID -> player.vimeo.com/video/ID
- * - Google Drive: drive.google.com/file/d/ID/view -> drive.google.com/file/d/ID/preview
+ * Robust YouTube video ID extractor supporting all formats:
+ * - https://www.youtube.com/watch?v=VIDEO_ID
+ * - https://www.youtube.com/watch?feature=shared&v=VIDEO_ID
+ * - https://youtu.be/VIDEO_ID
+ * - https://youtube.com/shorts/VIDEO_ID
+ * - https://www.youtube.com/embed/VIDEO_ID
+ * - https://www.youtube.com/live/VIDEO_ID
+ * - https://m.youtube.com/...
  */
-export function getEmbedVideoInfo(url: string): { type: 'youtube' | 'vimeo' | 'gdrive' | 'direct' | 'local' | 'unknown'; embedUrl: string } {
-  if (!url) return { type: 'unknown', embedUrl: '' };
-
+export function extractYouTubeId(url: string): string | null {
+  if (!url) return null;
   const trimmed = url.trim();
 
+  // YouTube Shorts: /shorts/{id}
+  const shortsMatch = trimmed.match(/(?:youtube\.com|youtu\.be)\/shorts\/([a-zA-Z0-9_-]{11})/i);
+  if (shortsMatch) return shortsMatch[1];
+
+  // Standard watch or embed or live or nocookie:
+  const standardMatch = trimmed.match(/(?:youtube(?:-nocookie)?\.com\/(?:[^\/\n\s]+\/\S+\/|(?:v|e(?:mbed)?|live)\/|\S*?[?&]v=)|youtu\.be\/)([a-zA-Z0-9_-]{11})/i);
+  if (standardMatch) return standardMatch[1];
+
+  // Fallback: any query param v= followed by 11 chars
+  const queryMatch = trimmed.match(/[?&]v=([a-zA-Z0-9_-]{11})/);
+  if (queryMatch) return queryMatch[1];
+
+  return null;
+}
+
+/**
+ * Extract Google Drive file ID
+ */
+export function extractGoogleDriveId(url: string): string | null {
+  if (!url) return null;
+  const match = url.trim().match(/drive\.google\.com\/(?:file\/d\/|open\?id=|uc\?id=)([a-zA-Z0-9_-]+)/);
+  return match ? match[1] : null;
+}
+
+/**
+ * Extract Vimeo video ID
+ */
+export function extractVimeoId(url: string): string | null {
+  if (!url) return null;
+  const match = url.trim().match(/vimeo\.com\/(?:channels\/(?:\w+\/)?|groups\/[^\/]*\/videos\/|album\/(?:\d+\/)?video\/|video\/|)(\d+)/);
+  return match ? match[1] : null;
+}
+
+/**
+ * Formats video links into embeddable / playable URLs:
+ * - YouTube: embeds via youtube-nocookie
+ * - Google Drive: embeds via preview
+ * - Vimeo: embeds via player
+ * - Direct / Shopee / MP4 / Data URL / Blob URL
+ */
+export function getEmbedVideoInfo(url: string): { 
+  type: 'youtube' | 'vimeo' | 'gdrive' | 'direct' | 'local' | 'unknown'; 
+  embedUrl: string;
+  originalUrl: string;
+} {
+  if (!url) return { type: 'unknown', embedUrl: '', originalUrl: '' };
+
+  let trimmed = url.trim();
+
+  // If protocol-relative url (e.g. //cvf.shopee.com.br/...)
+  if (trimmed.startsWith('//')) {
+    trimmed = `https:${trimmed}`;
+  }
+
+  // Local device video or blob URL
   if (trimmed.startsWith('local-video://') || trimmed.startsWith('blob:')) {
-    return { type: 'local', embedUrl: trimmed };
+    return { type: 'local', embedUrl: trimmed, originalUrl: trimmed };
   }
 
-  // YouTube Shorts
-  const ytShortsMatch = trimmed.match(/youtube\.com\/shorts\/([a-zA-Z0-9_-]+)/);
-  if (ytShortsMatch) {
+  // YouTube
+  const ytId = extractYouTubeId(trimmed);
+  if (ytId) {
     return {
       type: 'youtube',
-      embedUrl: `https://www.youtube.com/embed/${ytShortsMatch[1]}?autoplay=0&rel=0`
-    };
-  }
-
-  // YouTube standard watch
-  const ytWatchMatch = trimmed.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([a-zA-Z0-9_-]+)/);
-  if (ytWatchMatch) {
-    return {
-      type: 'youtube',
-      embedUrl: `https://www.youtube.com/embed/${ytWatchMatch[1]}?autoplay=0&rel=0`
-    };
-  }
-
-  // YouTube embed already
-  if (trimmed.includes('youtube.com/embed/')) {
-    return { type: 'youtube', embedUrl: trimmed };
-  }
-
-  // Vimeo
-  const vimeoMatch = trimmed.match(/vimeo\.com\/(\d+)/);
-  if (vimeoMatch) {
-    return {
-      type: 'vimeo',
-      embedUrl: `https://player.vimeo.com/video/${vimeoMatch[1]}`
+      embedUrl: `https://www.youtube-nocookie.com/embed/${ytId}?autoplay=0&rel=0&playsinline=1&modestbranding=1`,
+      originalUrl: `https://www.youtube.com/watch?v=${ytId}`
     };
   }
 
   // Google Drive
-  const gdriveMatch = trimmed.match(/drive\.google\.com\/file\/d\/([a-zA-Z0-9_-]+)/);
-  if (gdriveMatch) {
+  const gdriveId = extractGoogleDriveId(trimmed);
+  if (gdriveId) {
     return {
       type: 'gdrive',
-      embedUrl: `https://drive.google.com/file/d/${gdriveMatch[1]}/preview`
+      embedUrl: `https://drive.google.com/file/d/${gdriveId}/preview`,
+      originalUrl: trimmed
     };
   }
 
-  // Direct MP4 / WebM / Media
-  return { type: 'direct', embedUrl: trimmed };
+  // Vimeo
+  const vimeoId = extractVimeoId(trimmed);
+  if (vimeoId) {
+    return {
+      type: 'vimeo',
+      embedUrl: `https://player.vimeo.com/video/${vimeoId}?autoplay=0`,
+      originalUrl: trimmed
+    };
+  }
+
+  // Direct MP4 / WebM / Shopee / Data URL / Online video
+  return { type: 'direct', embedUrl: trimmed, originalUrl: trimmed };
 }
 
 /**

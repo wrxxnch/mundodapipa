@@ -88,8 +88,8 @@ export const ProductModal: React.FC<ProductModalProps> = ({
                   className="max-h-60 w-full object-contain rounded-xl shadow-md transition-all duration-300"
                 />
               ) : videoUrl ? (
-                <div className="w-full h-full rounded-xl overflow-hidden shadow-inner bg-black flex items-center justify-center">
-                  <SmartVideoPlayer url={videoUrl} autoPlay />
+                <div className="w-full min-h-[250px] h-full rounded-2xl overflow-hidden shadow-inner bg-black flex items-center justify-center">
+                  <SmartVideoPlayer url={videoUrl} title={`Vídeo de ${product.name}`} />
                 </div>
               ) : null}
 

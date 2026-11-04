@@ -32,7 +32,11 @@ export interface Product {
   rating: number;
   salesCount?: number;
   reviews?: ProductReview[];
+  createdAt?: string;
+  updatedAt?: string;
 }
+
+export type SortOption = 'newest' | 'relevance' | 'sales' | 'price-asc' | 'price-desc' | 'rating';
 
 export interface CartItem {
   product: Product;

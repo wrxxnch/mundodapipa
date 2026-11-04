@@ -1,5 +1,5 @@
 import React from 'react';
-import { Star, ShoppingCart, ExternalLink, Check, Eye, Pencil, Trash2, ShieldCheck, DollarSign } from 'lucide-react';
+import { Star, ShoppingCart, ExternalLink, Check, Eye, Pencil, Trash2, ShieldCheck, DollarSign, Video } from 'lucide-react';
 import { Product } from '../types';
 import { FastImage } from './FastImage';
 
@@ -104,6 +104,14 @@ export const ProductCard: React.FC<ProductCardProps> = ({
           </div>
         )}
 
+        {/* Video demo indicator */}
+        {(Boolean(product.videoUrl) || Boolean(product.videos && product.videos.length > 0)) && (
+          <span className="absolute bottom-3 left-3 bg-slate-900/85 backdrop-blur-sm text-amber-300 text-[10px] font-black px-2 py-0.5 rounded-md shadow flex items-center gap-1 border border-amber-400/30">
+            <Video className="w-3 h-3 text-red-500 fill-red-500" />
+            <span>Com Vídeo</span>
+          </span>
+        )}
+
         {/* Quick View Floating Button */}
         <button
           onClick={(e) => {
@@ -111,7 +119,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
             onQuickView(product);
           }}
           className="absolute bottom-3 right-3 bg-white/90 hover:bg-slate-900 hover:text-white text-slate-800 p-2 rounded-full shadow-md transition-all opacity-90 sm:opacity-0 group-hover:opacity-100"
-          title="Ver detalhes"
+          title="Ver detalhes e vídeo"
         >
           <Eye className="w-4 h-4" />
         </button>

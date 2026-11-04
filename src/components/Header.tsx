@@ -1,5 +1,5 @@
 import React from 'react';
-import { ShoppingBag, Search, ExternalLink, ShieldCheck, Truck, Sparkles, X, User, Plus, LogOut } from 'lucide-react';
+import { ShoppingBag, Search, ExternalLink, ShieldCheck, Truck, Sparkles, X, User, Plus, LogOut, Settings } from 'lucide-react';
 import { Category } from '../types';
 import logoImg from '../assets/images/logo.png';
 import { SHOPEE_STORE_URL } from '../data/products';
@@ -16,6 +16,7 @@ interface HeaderProps {
   onOpenAuth: () => void;
   onLogout: () => void;
   onOpenAddProduct?: () => void;
+  onOpenAdminSettings?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -28,7 +29,8 @@ export const Header: React.FC<HeaderProps> = ({
   user,
   onOpenAuth,
   onLogout,
-  onOpenAddProduct
+  onOpenAddProduct,
+  onOpenAdminSettings
 }) => {
   const categories: { id: Category; label: string; icon: string }[] = [
     { id: 'todos', label: 'Todos os Produtos', icon: '🪁' },
@@ -126,6 +128,16 @@ export const Header: React.FC<HeaderProps> = ({
                   >
                     <Plus className="w-3.5 h-3.5" />
                     <span className="hidden xl:inline">Novo Item</span>
+                  </button>
+                )}
+
+                {user.role === 'admin' && onOpenAdminSettings && (
+                  <button
+                    onClick={onOpenAdminSettings}
+                    className="bg-slate-800 hover:bg-slate-700 text-amber-400 p-1.5 rounded-full transition-colors border border-slate-700"
+                    title="Configurações de Ordenação (Admin)"
+                  >
+                    <Settings className="w-3.5 h-3.5" />
                   </button>
                 )}
 

@@ -7,7 +7,7 @@ import {
 import { Product, Category } from '../types';
 import { addProductToFirestore, updateProductInFirestore, deleteProductFromFirestore, deleteField } from '../lib/firebase';
 import { compressImageFile } from '../utils/imageCompressor';
-import { saveLocalVideo } from '../utils/mediaStore';
+import { saveLocalVideo, fileToDataUrl } from '../utils/mediaStore';
 import { SmartVideoPlayer } from './SmartVideoPlayer';
 
 interface AdminProductModalProps {
@@ -143,7 +143,7 @@ export const AdminProductModal: React.FC<AdminProductModalProps> = ({
     }
   };
 
-  // Handle Video Upload (Any video size accepted with no limits via local store)
+  // Handle Video Upload (Base64 direct cloud sync for clips <= 750KB or IndexedDB fallback)
   const handleVideoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
@@ -152,12 +152,19 @@ export const AdminProductModal: React.FC<AdminProductModalProps> = ({
       setError(null);
 
       try {
-        const mediaId = `vid_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
-        const localRef = await saveLocalVideo(mediaId, file);
-        setVideoUrl(localRef);
+        // If file is under 750KB, save directly as base64 Data URL so all users on all devices can play it
+        if (file.size <= 750 * 1024) {
+          const dataUrl = await fileToDataUrl(file);
+          setVideoUrl(dataUrl);
+        } else {
+          // If larger, store locally in IndexedDB
+          const mediaId = `vid_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+          const localRef = await saveLocalVideo(mediaId, file);
+          setVideoUrl(localRef);
+        }
       } catch (err: any) {
         console.error('Error storing video:', err);
-        setError('Erro ao salvar vídeo: ' + (err.message || 'Tente novamente'));
+        setError('Erro ao processar vídeo: ' + (err.message || 'Tente novamente'));
       } finally {
         setLoading(false);
       }
@@ -642,6 +649,9 @@ export const AdminProductModal: React.FC<AdminProductModalProps> = ({
                     placeholder="Ex: Link do YouTube, Shorts, Shopee, Google Drive ou link direto MP4..."
                     className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2 text-xs font-medium text-slate-900 focus:outline-none focus:border-orange-500 focus:bg-white"
                   />
+                  <p className="text-[11px] text-slate-500 font-medium">
+                    Suporta links do <strong>YouTube</strong>, <strong>Shorts</strong>, <strong>Shopee</strong>, <strong>Google Drive</strong> e <strong>MP4</strong> com reprodução automática em todos os celulares.
+                  </p>
                 </div>
               )}
 

@@ -22,6 +22,7 @@ import {
 } from '../lib/firebase';
 import { SmartVideoPlayer } from './SmartVideoPlayer';
 import { AdminPostModal } from './AdminPostModal';
+import { PostDetailModal } from './PostDetailModal';
 
 interface CommunityPostsSectionProps {
   user: UserProfile | null;
@@ -31,6 +32,7 @@ export const CommunityPostsSection: React.FC<CommunityPostsSectionProps> = ({ us
   const [posts, setPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [selectedPost, setSelectedPost] = useState<Post | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [errorNotice, setErrorNotice] = useState<string | null>(null);
 
@@ -190,7 +192,8 @@ export const CommunityPostsSection: React.FC<CommunityPostsSectionProps> = ({ us
           {posts.map((post) => (
             <article
               key={post.id}
-              className="bg-white rounded-3xl border border-slate-200 shadow-sm hover:shadow-md transition-all flex flex-col overflow-hidden group"
+              onClick={() => setSelectedPost(post)}
+              className="bg-white rounded-3xl border border-slate-200 shadow-sm hover:shadow-xl hover:border-orange-300 transition-all duration-300 flex flex-col overflow-hidden group cursor-pointer transform hover:-translate-y-1 relative"
             >
               {/* Media banner if present */}
               {post.imageUrl && (
@@ -201,13 +204,21 @@ export const CommunityPostsSection: React.FC<CommunityPostsSectionProps> = ({ us
                     className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                     referrerPolicy="no-referrer"
                   />
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-3">
+                    <span className="text-white text-xs font-bold drop-shadow">Clique para ver o post completo</span>
+                  </div>
                 </div>
               )}
 
               {/* Video Player if present */}
               {post.videoUrl && (
-                <div className="p-3 bg-slate-950">
-                  <SmartVideoPlayer videoUrl={post.videoUrl} title={post.title || 'Vídeo'} />
+                <div 
+                  className="p-3 bg-slate-950 aspect-video w-full overflow-hidden"
+                  onClick={(e) => {
+                    // Let user interact with player or click to expand
+                  }}
+                >
+                  <SmartVideoPlayer url={post.videoUrl} videoUrl={post.videoUrl} title={post.title || 'Vídeo'} />
                 </div>
               )}
 
@@ -229,15 +240,20 @@ export const CommunityPostsSection: React.FC<CommunityPostsSectionProps> = ({ us
 
                   {/* Title */}
                   {post.title && (
-                    <h3 className="font-black text-slate-900 text-base leading-snug mb-2 group-hover:text-orange-600 transition-colors">
+                    <h3 className="font-black text-slate-900 text-base leading-snug mb-2 group-hover:text-orange-600 transition-colors line-clamp-2">
                       {post.title}
                     </h3>
                   )}
 
-                  {/* Body Content */}
-                  <p className="text-slate-600 text-xs sm:text-sm font-normal leading-relaxed whitespace-pre-line">
+                  {/* Body Content (Clean preview truncated) */}
+                  <p className="text-slate-600 text-xs sm:text-sm font-normal leading-relaxed line-clamp-3">
                     {post.content}
                   </p>
+
+                  <div className="mt-3 text-xs font-bold text-orange-600 flex items-center gap-1 group-hover:text-orange-700">
+                    <span>Ler post completo</span>
+                    <span className="group-hover:translate-x-1 transition-transform">→</span>
+                  </div>
                 </div>
 
                 {/* Footer Controls */}
@@ -249,8 +265,12 @@ export const CommunityPostsSection: React.FC<CommunityPostsSectionProps> = ({ us
 
                   {(user?.role === 'admin' || user?.uid === post.authorId) && (
                     <button
-                      onClick={() => handleDeletePost(post)}
-                      className="text-rose-500 hover:text-rose-700 p-1.5 rounded-lg hover:bg-rose-50 transition-colors"
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDeletePost(post);
+                      }}
+                      className="text-rose-500 hover:text-rose-700 p-1.5 rounded-lg hover:bg-rose-50 transition-colors z-10"
                       title="Deletar post do Firebase"
                     >
                       <Trash2 className="w-4 h-4" />
@@ -262,6 +282,14 @@ export const CommunityPostsSection: React.FC<CommunityPostsSectionProps> = ({ us
           ))}
         </div>
       )}
+
+      {/* Full Post Detail Modal */}
+      <PostDetailModal
+        post={selectedPost}
+        onClose={() => setSelectedPost(null)}
+        user={user}
+        onDeletePost={handleDeletePost}
+      />
 
       {/* Admin / User Post Creation Modal */}
       <AdminPostModal

@@ -208,6 +208,21 @@ export const parseFirestoreProduct = (id: string, data: any): Product => {
   const stockQtyNum = data.stockQuantity != null && !isNaN(Number(data.stockQuantity)) ? Number(data.stockQuantity) : undefined;
   const salesCountNum = data.salesCount != null && Number(data.salesCount) > 0 ? Number(data.salesCount) : undefined;
 
+  // Fallback timestamp if createdAt is not stored
+  let createdAtStr = data.createdAt;
+  if (!createdAtStr) {
+    if (id.startsWith('prod_')) {
+      const parts = id.split('_');
+      const timestamp = Number(parts[1]);
+      if (!isNaN(timestamp) && timestamp > 1600000000000) {
+        createdAtStr = new Date(timestamp).toISOString();
+      }
+    }
+    if (!createdAtStr) {
+      createdAtStr = '2024-01-01T00:00:00.000Z';
+    }
+  }
+
   return {
     id,
     name: data.name || '',
@@ -226,7 +241,9 @@ export const parseFirestoreProduct = (id: string, data: any): Product => {
     badge: data.badge || undefined,
     rating: Number(data.rating) || 5.0,
     salesCount: salesCountNum,
-    reviews: Array.isArray(data.reviews) ? data.reviews : (SHOPEE_PRODUCT_FIO10.reviews || [])
+    reviews: Array.isArray(data.reviews) ? data.reviews : (SHOPEE_PRODUCT_FIO10.reviews || []),
+    createdAt: createdAtStr,
+    updatedAt: data.updatedAt || undefined
   };
 };
 
@@ -419,7 +436,9 @@ export const addProductToFirestore = async (newProduct: Partial<Product> | Recor
     badge: newProduct.badge || undefined,
     rating: Number(newProduct.rating) || 5.0,
     salesCount: newProduct.salesCount ? Number(newProduct.salesCount) : undefined,
-    reviews: Array.isArray(newProduct.reviews) ? newProduct.reviews : []
+    reviews: Array.isArray(newProduct.reviews) ? newProduct.reviews : [],
+    createdAt: newProduct.createdAt || new Date().toISOString(),
+    updatedAt: new Date().toISOString()
   };
 
   // 1. Immediately update local cache & notify UI
@@ -432,9 +451,7 @@ export const addProductToFirestore = async (newProduct: Partial<Product> | Recor
   try {
     const docRef = doc(db, 'products', newId);
     const sanitized = cleanFirestoreData({
-      ...productToSave,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
+      ...productToSave
     });
     await setDoc(docRef, sanitized);
     return newId;
@@ -947,6 +964,113 @@ export const subscribeToPosts = (
     } catch (wrappedErr: any) {
       if (onError) onError(wrappedErr);
     }
+    return () => {};
+  }
+};
+
+/**
+ * Catalog Settings: Default sorting configuration (toggleable by admin)
+ */
+export interface CatalogSettings {
+  defaultSortNewest: boolean;
+  defaultSortOption: 'newest' | 'relevance' | 'sales' | 'price-asc' | 'price-desc' | 'rating';
+  updatedAt?: string;
+  updatedBy?: string;
+}
+
+export const DEFAULT_CATALOG_SETTINGS: CatalogSettings = {
+  defaultSortNewest: true, // Default to "Mais novos primeiro"
+  defaultSortOption: 'newest'
+};
+
+const LOCAL_CATALOG_SETTINGS_KEY = 'mundo_pipa_catalog_settings';
+
+export const getLocalCatalogSettings = (): CatalogSettings => {
+  try {
+    const raw = localStorage.getItem(LOCAL_CATALOG_SETTINGS_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (typeof parsed.defaultSortNewest === 'boolean') {
+        return parsed;
+      }
+    }
+  } catch {}
+  return DEFAULT_CATALOG_SETTINGS;
+};
+
+export const setLocalCatalogSettings = (settings: CatalogSettings) => {
+  try {
+    localStorage.setItem(LOCAL_CATALOG_SETTINGS_KEY, JSON.stringify(settings));
+  } catch {}
+};
+
+export const getCatalogSettingsFromFirestore = async (): Promise<CatalogSettings> => {
+  try {
+    const docRef = doc(db, 'site_content', 'catalog_settings');
+    const docSnap = await getDoc(docRef);
+    if (docSnap.exists()) {
+      const data = docSnap.data();
+      const settings: CatalogSettings = {
+        defaultSortNewest: data.defaultSortNewest !== undefined ? Boolean(data.defaultSortNewest) : true,
+        defaultSortOption: data.defaultSortOption || 'newest',
+        updatedAt: data.updatedAt,
+        updatedBy: data.updatedBy
+      };
+      setLocalCatalogSettings(settings);
+      return settings;
+    }
+  } catch (error) {
+    console.warn('Error fetching catalog settings from Firestore:', error);
+  }
+  return getLocalCatalogSettings();
+};
+
+export const saveCatalogSettingsToFirestore = async (settings: CatalogSettings, userEmail?: string): Promise<void> => {
+  setLocalCatalogSettings(settings);
+  try {
+    const docRef = doc(db, 'site_content', 'catalog_settings');
+    const dataToSave = cleanFirestoreData({
+      ...settings,
+      updatedAt: new Date().toISOString(),
+      updatedBy: userEmail || 'admin'
+    });
+    await setDoc(docRef, dataToSave, { merge: true });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, 'site_content/catalog_settings');
+  }
+};
+
+export const subscribeToCatalogSettings = (
+  onData: (settings: CatalogSettings) => void
+) => {
+  // 1. Immediately provide local/cached settings
+  const cached = getLocalCatalogSettings();
+  onData(cached);
+
+  // 2. Realtime Firestore listener
+  try {
+    const docRef = doc(db, 'site_content', 'catalog_settings');
+    const unsubscribe = onSnapshot(
+      docRef,
+      (docSnap) => {
+        if (docSnap.exists()) {
+          const data = docSnap.data();
+          const settings: CatalogSettings = {
+            defaultSortNewest: data.defaultSortNewest !== undefined ? Boolean(data.defaultSortNewest) : true,
+            defaultSortOption: data.defaultSortOption || 'newest',
+            updatedAt: data.updatedAt,
+            updatedBy: data.updatedBy
+          };
+          setLocalCatalogSettings(settings);
+          onData(settings);
+        }
+      },
+      (error) => {
+        console.warn('Catalog settings listener error:', error);
+      }
+    );
+    return unsubscribe;
+  } catch {
     return () => {};
   }
 };

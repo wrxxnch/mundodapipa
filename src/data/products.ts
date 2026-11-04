@@ -20,7 +20,8 @@ export const PRODUCTS: Product[] = [
     shopeeUrl: SHOPEE_STORE_URL,
     badge: 'Mais Vendido',
     rating: 4.9,
-    salesCount: 1420
+    salesCount: 1420,
+    videoUrl: 'https://www.youtube.com/watch?v=k-V39b-e8pU'
   },
   {
     id: 'linha-10-corrente',
@@ -50,7 +51,8 @@ export const PRODUCTS: Product[] = [
     shopeeUrl: SHOPEE_STORE_URL,
     badge: 'Profissional',
     rating: 4.8,
-    salesCount: 890
+    salesCount: 890,
+    videoUrl: 'https://www.youtube.com/watch?v=0hB3u148J8A'
   },
   {
     id: 'carretilha-madeira-25',

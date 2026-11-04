@@ -23,6 +23,7 @@ export const SHOPEE_PRODUCT_FIO10: Product = {
   badge: 'Shopee Oficial',
   rating: 5.0,
   salesCount: 365,
+  videoUrl: 'https://www.youtube.com/watch?v=k-V39b-e8pU',
   reviews: [
     {
       id: 'rev-theus878',

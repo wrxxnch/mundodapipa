@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
 import { X, Send, Image as ImageIcon, Video, AlertCircle, Sparkles } from 'lucide-react';
-import { Post } from '../types';
 import { addPostToFirestore, UserProfile } from '../lib/firebase';
 import { compressImageFile } from '../utils/imageCompressor';
+import { SmartVideoPlayer } from './SmartVideoPlayer';
 
 interface AdminPostModalProps {
   isOpen: boolean;
@@ -202,6 +202,11 @@ export const AdminPostModal: React.FC<AdminPostModalProps> = ({
               />
               <Video className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
             </div>
+            {videoUrl.trim() && (
+              <div className="mt-2 rounded-xl overflow-hidden bg-black p-1 border border-slate-700 aspect-video max-h-48">
+                <SmartVideoPlayer url={videoUrl} title="Prévia do Vídeo" />
+              </div>
+            )}
           </div>
 
           {/* Submit button */}

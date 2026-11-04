@@ -13,8 +13,10 @@ import { Footer } from './components/Footer';
 import { AuthModal } from './components/AuthModal';
 import { AdminProductModal } from './components/AdminProductModal';
 import { EditPriceModal } from './components/EditPriceModal';
+import { AdminSettingsModal } from './components/AdminSettingsModal';
+import { ProductSortToolbar } from './components/ProductSortToolbar';
 
-import { Category, Product, CartItem } from './types';
+import { Category, Product, CartItem, SortOption } from './types';
 import { PRODUCTS as DEFAULT_PRODUCTS } from './data/products';
 import { 
   subscribeToProducts, 
@@ -26,16 +28,26 @@ import {
   registerShopeeItemDirectly,
   saveUserCartToFirestore,
   subscribeToUserCart,
-  UserProfile 
+  UserProfile,
+  CatalogSettings,
+  getLocalCatalogSettings,
+  subscribeToCatalogSettings
 } from './lib/firebase';
 import { ShoppingBag } from 'lucide-react';
 
-import { Filter, SlidersHorizontal, Sparkles, Plus, ShieldCheck, DollarSign, Lock, Trash2, PackagePlus } from 'lucide-react';
+import { Filter, SlidersHorizontal, Sparkles, Plus, ShieldCheck, DollarSign, Lock, Trash2, PackagePlus, Settings } from 'lucide-react';
 
 export default function App() {
   const [activeCategory, setActiveCategory] = useState<Category>('todos');
   const [searchQuery, setSearchQuery] = useState('');
-  const [sortBy, setSortBy] = useState<'relevance' | 'price-asc' | 'price-desc' | 'sales'>('relevance');
+
+  // Catalog Settings & Sorting State
+  const [catalogSettings, setCatalogSettings] = useState<CatalogSettings>(() => getLocalCatalogSettings());
+  const [sortBy, setSortBy] = useState<SortOption>(() => {
+    const settings = getLocalCatalogSettings();
+    return settings.defaultSortNewest ? 'newest' : (settings.defaultSortOption || 'newest');
+  });
+  const [isAdminSettingsOpen, setIsAdminSettingsOpen] = useState(false);
 
   // Firebase Real-time Products list (starts empty for fresh creation)
   const [products, setProducts] = useState<Product[]>([]);
@@ -136,6 +148,14 @@ export default function App() {
   useEffect(() => {
     const unsubscribe = listenAuthState((userProfile) => {
       setUser(userProfile);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  // Listen to Catalog Settings (Default sorting configured by Admin)
+  useEffect(() => {
+    const unsubscribe = subscribeToCatalogSettings((settings) => {
+      setCatalogSettings(settings);
     });
     return () => unsubscribe();
   }, []);
@@ -282,13 +302,22 @@ export default function App() {
       return true;
     });
 
-    // Sorting
-    if (sortBy === 'price-asc') {
+    // Sorting logic
+    if (sortBy === 'newest') {
+      list.sort((a, b) => {
+        const timeA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+        const timeB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+        if (timeA !== timeB) return timeB - timeA;
+        return (b.id || '').localeCompare(a.id || '');
+      });
+    } else if (sortBy === 'price-asc') {
       list.sort((a, b) => a.price - b.price);
     } else if (sortBy === 'price-desc') {
       list.sort((a, b) => b.price - a.price);
     } else if (sortBy === 'sales') {
       list.sort((a, b) => (b.salesCount || 0) - (a.salesCount || 0));
+    } else if (sortBy === 'rating') {
+      list.sort((a, b) => (b.rating || 0) - (a.rating || 0));
     }
 
     return list;
@@ -316,6 +345,7 @@ export default function App() {
         onOpenAuth={() => setIsAuthOpen(true)}
         onLogout={logoutAppUser}
         onOpenAddProduct={handleOpenAddProduct}
+        onOpenAdminSettings={() => setIsAdminSettingsOpen(true)}
       />
 
 
@@ -332,7 +362,7 @@ export default function App() {
         <section id="produtos" className="scroll-mt-24">
           
           {/* Section Header & Filters Bar */}
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8 pb-4 border-b border-slate-200">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6 pb-4 border-b border-slate-200">
             <div>
               <div className="flex items-center gap-2">
                 <h2 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight uppercase">
@@ -347,33 +377,58 @@ export default function App() {
               </p>
             </div>
 
-            {/* Sorting controls & Admin Add button */}
-            <div className="flex items-center gap-3">
+            {/* Sorting controls & Admin controls */}
+            <div className="flex flex-wrap items-center gap-2.5">
               {user?.role === 'admin' && (
-                <button
-                  onClick={handleOpenAddProduct}
-                  className="bg-orange-600 hover:bg-orange-700 text-white font-black text-xs px-4 py-2 rounded-xl shadow-md flex items-center gap-1.5 uppercase tracking-wide"
-                >
-                  <Plus className="w-4 h-4" />
-                  <span>Cadastrar Item</span>
-                </button>
+                <>
+                  <button
+                    onClick={handleOpenAddProduct}
+                    className="bg-orange-600 hover:bg-orange-700 text-white font-black text-xs px-3.5 py-2 rounded-xl shadow-md flex items-center gap-1.5 uppercase tracking-wide transition-all"
+                  >
+                    <Plus className="w-4 h-4" />
+                    <span>Cadastrar Item</span>
+                  </button>
+
+                  <button
+                    onClick={() => setIsAdminSettingsOpen(true)}
+                    className="bg-white hover:bg-slate-50 text-slate-700 hover:text-orange-600 font-bold text-xs px-3 py-2 rounded-xl border border-slate-200 shadow-xs flex items-center gap-1.5 transition-all"
+                    title="Configurações de Ordenação (Admin)"
+                  >
+                    <Settings className="w-3.5 h-3.5 text-orange-500" />
+                    <span className="hidden sm:inline">Padrão: {catalogSettings.defaultSortNewest ? 'Mais Novos' : 'Personalizado'}</span>
+                    <span className="sm:hidden">Padrão</span>
+                  </button>
+                </>
               )}
 
-              <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-xl px-3.5 py-2 shadow-sm text-xs font-bold text-slate-700">
+              <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-xl px-3 py-2 shadow-xs text-xs font-bold text-slate-700">
                 <SlidersHorizontal className="w-3.5 h-3.5 text-orange-500" />
-                <span>Ordenar:</span>
+                <span className="hidden sm:inline">Ordenar:</span>
                 <select
                   value={sortBy}
-                  onChange={(e: any) => setSortBy(e.target.value)}
+                  onChange={(e: any) => setSortBy(e.target.value as SortOption)}
                   className="bg-transparent text-slate-900 font-black focus:outline-none cursor-pointer"
                 >
-                  <option value="relevance">Mais Relevantes</option>
-                  <option value="sales">Mais Vendidos</option>
-                  <option value="price-asc">Menor Preço</option>
-                  <option value="price-desc">Maior Preço</option>
+                  <option value="newest">⚡ Mais Novos Primeiro</option>
+                  <option value="sales">🔥 Mais Vendidos</option>
+                  <option value="price-asc">🏷️ Menor Preço</option>
+                  <option value="price-desc">💎 Maior Preço</option>
+                  <option value="rating">⭐ Melhores Avaliações</option>
+                  <option value="relevance">📌 Destaques</option>
                 </select>
               </div>
             </div>
+          </div>
+
+          {/* Aba de Ordenar por (Tabs Bar) */}
+          <div className="mb-8">
+            <ProductSortToolbar
+              sortBy={sortBy}
+              onSortChange={setSortBy}
+              isAdmin={user?.role === 'admin'}
+              onOpenAdminSettings={() => setIsAdminSettingsOpen(true)}
+              defaultSortNewest={catalogSettings.defaultSortNewest}
+            />
           </div>
 
           {/* Product Cards Grid */}
@@ -477,6 +532,22 @@ export default function App() {
         isOpen={isPriceModalOpen}
         onClose={() => setIsPriceModalOpen(false)}
         product={productToEditPrice}
+      />
+
+      {/* Admin Catalog Settings Modal (Default Sort, etc.) */}
+      <AdminSettingsModal
+        isOpen={isAdminSettingsOpen}
+        onClose={() => setIsAdminSettingsOpen(false)}
+        currentSettings={catalogSettings}
+        onSettingsSaved={(newSettings) => {
+          setCatalogSettings(newSettings);
+          if (newSettings.defaultSortNewest) {
+            setSortBy('newest');
+          } else {
+            setSortBy(newSettings.defaultSortOption || 'relevance');
+          }
+        }}
+        userEmail={user?.email}
       />
 
       {/* Quick View Product Modal */}
