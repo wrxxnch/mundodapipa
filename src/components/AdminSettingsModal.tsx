@@ -18,7 +18,10 @@ import {
   CheckSquare, 
   Square, 
   Copy, 
-  ExternalLink 
+  ExternalLink,
+  Eye,
+  EyeOff,
+  Globe
 } from 'lucide-react';
 import { 
   CatalogSettings, 
@@ -26,7 +29,8 @@ import {
   subscribeToCoupons, 
   saveCouponToFirestore, 
   deleteCouponFromFirestore, 
-  toggleCouponStatusInFirestore 
+  toggleCouponStatusInFirestore,
+  toggleCouponShowOnSiteInFirestore
 } from '../lib/firebase';
 import { SortOption, Product, Coupon } from '../types';
 
@@ -70,6 +74,7 @@ export const AdminSettingsModal: React.FC<AdminSettingsModalProps> = ({
   const [appliesToAll, setAppliesToAll] = useState(true);
   const [applicableProductIds, setApplicableProductIds] = useState<string[]>([]);
   const [couponActive, setCouponActive] = useState(true);
+  const [showOnSite, setShowOnSite] = useState(true);
 
   // Product selector search & filter
   const [productSearch, setProductSearch] = useState('');
@@ -80,6 +85,10 @@ export const AdminSettingsModal: React.FC<AdminSettingsModalProps> = ({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [savingCoupon, setSavingCoupon] = useState(false);
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
+
+  // Deletion Confirmation Modal State (replaces window.confirm)
+  const [couponToDelete, setCouponToDelete] = useState<Coupon | null>(null);
+  const [isDeletingCoupon, setIsDeletingCoupon] = useState(false);
 
   // Real-time coupons subscription
   useEffect(() => {
@@ -121,6 +130,7 @@ export const AdminSettingsModal: React.FC<AdminSettingsModalProps> = ({
     setAppliesToAll(true);
     setApplicableProductIds([]);
     setCouponActive(true);
+    setShowOnSite(true);
     setProductSearch('');
     setIsFormOpen(true);
     setErrorMessage(null);
@@ -135,6 +145,7 @@ export const AdminSettingsModal: React.FC<AdminSettingsModalProps> = ({
     setAppliesToAll(coupon.appliesToAll);
     setApplicableProductIds(coupon.applicableProductIds || []);
     setCouponActive(coupon.active);
+    setShowOnSite(coupon.showOnSite !== false);
     setProductSearch('');
     setIsFormOpen(true);
     setErrorMessage(null);
@@ -189,6 +200,7 @@ export const AdminSettingsModal: React.FC<AdminSettingsModalProps> = ({
         discountPercent: Number(discountPercent),
         description: description.trim(),
         active: couponActive,
+        showOnSite,
         appliesToAll,
         applicableProductIds: appliesToAll ? [] : applicableProductIds
       }, userEmail);
@@ -203,15 +215,23 @@ export const AdminSettingsModal: React.FC<AdminSettingsModalProps> = ({
     }
   };
 
-  const handleDeleteCoupon = async (coupon: Coupon) => {
-    if (window.confirm(`Tem certeza que deseja excluir o cupom "${coupon.code}"?`)) {
-      try {
-        await deleteCouponFromFirestore(coupon.id);
-        setSuccessMessage(`Cupom ${coupon.code} excluído com sucesso.`);
-        setTimeout(() => setSuccessMessage(null), 3000);
-      } catch (err: any) {
-        setErrorMessage(err?.message || 'Erro ao excluir cupom.');
-      }
+  const handleDeleteCouponClick = (coupon: Coupon) => {
+    setCouponToDelete(coupon);
+  };
+
+  const handleConfirmDeleteCoupon = async () => {
+    if (!couponToDelete) return;
+    setIsDeletingCoupon(true);
+    setErrorMessage(null);
+    try {
+      await deleteCouponFromFirestore(couponToDelete.id);
+      setSuccessMessage(`Cupom "${couponToDelete.code}" excluído com sucesso!`);
+      setCouponToDelete(null);
+      setTimeout(() => setSuccessMessage(null), 3000);
+    } catch (err: any) {
+      setErrorMessage(err?.message || 'Erro ao excluir cupom.');
+    } finally {
+      setIsDeletingCoupon(false);
     }
   };
 
@@ -220,6 +240,21 @@ export const AdminSettingsModal: React.FC<AdminSettingsModalProps> = ({
       await toggleCouponStatusInFirestore(coupon.id, coupon.active);
     } catch (err: any) {
       setErrorMessage(err?.message || 'Erro ao alterar status do cupom.');
+    }
+  };
+
+  const handleToggleShowOnSite = async (coupon: Coupon) => {
+    const nextVal = coupon.showOnSite === false;
+    try {
+      await toggleCouponShowOnSiteInFirestore(coupon.id, coupon.showOnSite !== false);
+      setSuccessMessage(
+        nextVal
+          ? `Cupom ${coupon.code} agora está VISÍVEL no site (Hero e Carrinho)!`
+          : `Cupom ${coupon.code} foi OCULTADO do site (válido apenas digitando o código).`
+      );
+      setTimeout(() => setSuccessMessage(null), 3000);
+    } catch (err: any) {
+      setErrorMessage(err?.message || 'Erro ao alterar visibilidade no site.');
     }
   };
 
@@ -635,6 +670,38 @@ export const AdminSettingsModal: React.FC<AdminSettingsModalProps> = ({
                     </button>
                   </div>
 
+                  {/* Show on Site (Hero & Cart) Toggle */}
+                  <div className="flex items-center justify-between pt-2.5 border-t border-slate-200 bg-amber-50/60 p-3 rounded-xl border border-amber-200/80">
+                    <div>
+                      <span className="text-xs font-black text-slate-900 flex items-center gap-1.5">
+                        <Globe className="w-3.5 h-3.5 text-orange-600" />
+                        <span>Mostrar no Site (Hero Promocional & Carrinho)</span>
+                      </span>
+                      <span className="text-[11px] text-slate-600 block mt-0.5">
+                        {showOnSite
+                          ? '✓ Visível publicamente: exibe no banner do Hero e sugere no carrinho na hora da compra.'
+                          : '🔒 Oculto do site: cupom exclusivo/secreto (válido apenas digitando o código).'
+                        }
+                      </span>
+                    </div>
+
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={showOnSite}
+                      onClick={() => setShowOnSite(!showOnSite)}
+                      className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out ${
+                        showOnSite ? 'bg-orange-600' : 'bg-slate-300'
+                      }`}
+                    >
+                      <span
+                        className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                          showOnSite ? 'translate-x-5' : 'translate-x-0'
+                        }`}
+                      />
+                    </button>
+                  </div>
+
                   {/* Form Footer */}
                   <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-200">
                     <button
@@ -716,6 +783,15 @@ export const AdminSettingsModal: React.FC<AdminSettingsModalProps> = ({
                                 }`}>
                                   {coupon.active ? 'Ativo' : 'Pausado'}
                                 </span>
+
+                                <span className={`text-[10px] font-black uppercase px-2 py-0.5 rounded-full flex items-center gap-1 ${
+                                  coupon.showOnSite !== false
+                                    ? 'bg-blue-100 text-blue-800'
+                                    : 'bg-slate-200 text-slate-600'
+                                }`}>
+                                  {coupon.showOnSite !== false ? <Eye className="w-3 h-3 text-blue-600" /> : <EyeOff className="w-3 h-3 text-slate-500" />}
+                                  <span>{coupon.showOnSite !== false ? 'No Site' : 'Oculto'}</span>
+                                </span>
                               </div>
 
                               {coupon.description && (
@@ -750,6 +826,21 @@ export const AdminSettingsModal: React.FC<AdminSettingsModalProps> = ({
                                 {isCopied ? <Check className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4" />}
                               </button>
 
+                              {/* Toggle Show On Site */}
+                              <button
+                                type="button"
+                                onClick={() => handleToggleShowOnSite(coupon)}
+                                className={`text-[11px] font-bold px-2 py-1 rounded-lg transition-colors border flex items-center gap-1 ${
+                                  coupon.showOnSite !== false
+                                    ? 'bg-blue-50 text-blue-700 hover:bg-blue-100 border-blue-200'
+                                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200 border-slate-300'
+                                }`}
+                                title={coupon.showOnSite !== false ? 'Clique para ocultar do Hero e site' : 'Clique para exibir no Hero e site'}
+                              >
+                                {coupon.showOnSite !== false ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
+                                <span>{coupon.showOnSite !== false ? 'No Site' : 'Oculto'}</span>
+                              </button>
+
                               <button
                                 type="button"
                                 onClick={() => handleToggleCouponStatus(coupon)}
@@ -773,11 +864,12 @@ export const AdminSettingsModal: React.FC<AdminSettingsModalProps> = ({
 
                               <button
                                 type="button"
-                                onClick={() => handleDeleteCoupon(coupon)}
-                                className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                                title="Excluir cupom"
+                                onClick={() => handleDeleteCouponClick(coupon)}
+                                className="p-1.5 text-red-500 hover:text-white hover:bg-red-600 border border-red-200 hover:border-red-600 rounded-lg transition-colors flex items-center gap-1 shadow-xs"
+                                title="Excluir cupom permanentemente"
                               >
                                 <Trash2 className="w-4 h-4" />
+                                <span className="text-[11px] font-bold">Excluir</span>
                               </button>
                             </div>
                           </div>
@@ -918,6 +1010,70 @@ export const AdminSettingsModal: React.FC<AdminSettingsModalProps> = ({
         </div>
 
       </div>
+
+      {/* Confirmation Modal for Deleting Coupon (replaces window.confirm) */}
+      {couponToDelete && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-fadeIn">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-red-200 space-y-4">
+            <div className="flex items-center gap-3 text-red-600">
+              <div className="w-12 h-12 rounded-2xl bg-red-100 flex items-center justify-center shrink-0">
+                <Trash2 className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="text-lg font-black text-slate-900 leading-tight">Excluir Cupom Promocional?</h3>
+                <p className="text-xs text-slate-500">Esta ação não poderá ser desfeita.</p>
+              </div>
+            </div>
+
+            <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3.5 space-y-1">
+              <div className="flex items-center justify-between">
+                <span className="font-mono font-black text-slate-900 text-sm">
+                  {couponToDelete.code}
+                </span>
+                <span className="bg-red-600 text-white font-black text-xs px-2 py-0.5 rounded-full">
+                  {couponToDelete.discountPercent}% OFF
+                </span>
+              </div>
+              {couponToDelete.description && (
+                <p className="text-xs text-slate-600 italic">"{couponToDelete.description}"</p>
+              )}
+              <p className="text-[11px] text-slate-500">
+                {couponToDelete.appliesToAll ? '✓ Válido para todo o catálogo' : `🎯 Válido para ${couponToDelete.applicableProductIds?.length || 0} produtos`}
+              </p>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setCouponToDelete(null)}
+                disabled={isDeletingCoupon}
+                className="px-4 py-2 text-xs font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-xl transition-colors"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDeleteCoupon}
+                disabled={isDeletingCoupon}
+                className="px-4 py-2 text-xs font-black text-white bg-red-600 hover:bg-red-700 rounded-xl shadow-lg transition-colors flex items-center gap-1.5"
+              >
+                {isDeletingCoupon ? (
+                  <>
+                    <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    <span>Excluindo...</span>
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Sim, Excluir Cupom</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 };

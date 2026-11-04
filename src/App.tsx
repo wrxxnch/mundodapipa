@@ -16,7 +16,7 @@ import { EditPriceModal } from './components/EditPriceModal';
 import { AdminSettingsModal } from './components/AdminSettingsModal';
 import { ProductSortToolbar } from './components/ProductSortToolbar';
 
-import { Category, Product, CartItem, SortOption } from './types';
+import { Category, Product, CartItem, SortOption, Coupon } from './types';
 import { PRODUCTS as DEFAULT_PRODUCTS } from './data/products';
 import { 
   subscribeToProducts, 
@@ -28,6 +28,7 @@ import {
   registerShopeeItemDirectly,
   saveUserCartToFirestore,
   subscribeToUserCart,
+  subscribeToCoupons,
   UserProfile,
   CatalogSettings,
   getLocalCatalogSettings,
@@ -55,6 +56,13 @@ export default function App() {
   // Firebase Auth User State
   const [user, setUser] = useState<UserProfile | null>(null);
 
+  // Coupons State (for promotion badges on products)
+  const [coupons, setCoupons] = useState<Coupon[]>([]);
+
+  // Deletion confirmation modal state (eliminates window.confirm)
+  const [productToDelete, setProductToDelete] = useState<Product | null>(null);
+  const [isDeletingProduct, setIsDeletingProduct] = useState(false);
+
   // Modals state
   const [isAuthOpen, setIsAuthOpen] = useState(false);
   const [isAdminModalOpen, setIsAdminModalOpen] = useState(false);
@@ -75,6 +83,14 @@ export default function App() {
 
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
+  const [cartPrefillCoupon, setCartPrefillCoupon] = useState<string | null>(null);
+
+  const handleOpenCartWithCoupon = (couponCode?: string) => {
+    if (couponCode) {
+      setCartPrefillCoupon(couponCode);
+    }
+    setIsCartOpen(true);
+  };
 
   // Clear all products action with Admin email verification
   const handleClearAllProducts = async () => {
@@ -156,6 +172,14 @@ export default function App() {
   useEffect(() => {
     const unsubscribe = subscribeToCatalogSettings((settings) => {
       setCatalogSettings(settings);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  // Real-time Coupons subscription (for promo discount tags on products)
+  useEffect(() => {
+    const unsubscribe = subscribeToCoupons((realtimeCoupons) => {
+      setCoupons(realtimeCoupons);
     });
     return () => unsubscribe();
   }, []);
@@ -274,13 +298,20 @@ export default function App() {
     setIsPriceModalOpen(true);
   };
 
-  const handleDeleteProduct = async (product: Product) => {
-    if (window.confirm(`Tem certeza que deseja DELETAR o item "${product.name}" do catálogo?`)) {
-      try {
-        await deleteProductFromFirestore(product.id);
-      } catch (err: any) {
-        alert('Erro ao deletar produto: ' + err.message);
-      }
+  const handleDeleteProduct = (product: Product) => {
+    setProductToDelete(product);
+  };
+
+  const handleConfirmDeleteProduct = async () => {
+    if (!productToDelete) return;
+    setIsDeletingProduct(true);
+    try {
+      await deleteProductFromFirestore(productToDelete.id);
+      setProductToDelete(null);
+    } catch (err: any) {
+      console.error('Erro ao deletar produto:', err);
+    } finally {
+      setIsDeletingProduct(false);
     }
   };
 
@@ -352,7 +383,7 @@ export default function App() {
       {/* Hero Banner Section */}
       <Hero 
         onExploreClick={scrollToProducts} 
-        onOpenCart={() => setIsCartOpen(true)} 
+        onOpenCart={handleOpenCartWithCoupon} 
       />
 
       {/* Main Container */}
@@ -487,6 +518,7 @@ export default function App() {
                 <ProductCard
                   key={product.id}
                   product={product}
+                  coupons={coupons}
                   onAddToCart={handleAddToCart}
                   onQuickView={setSelectedProduct}
                   isAdmin={user?.role === 'admin'}
@@ -570,7 +602,69 @@ export default function App() {
         onRemoveItem={handleRemoveFromCart}
         onClearCart={handleClearCart}
         user={user}
+        initialCouponCode={cartPrefillCoupon}
       />
+
+      {/* Custom Confirmation Modal for Deleting Product */}
+      {productToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-fadeIn">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-red-200 space-y-4">
+            <div className="flex items-center gap-3 text-red-600">
+              <div className="w-12 h-12 rounded-2xl bg-red-100 flex items-center justify-center shrink-0">
+                <Trash2 className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="text-lg font-black text-slate-900 leading-tight">Excluir Produto?</h3>
+                <p className="text-xs text-slate-500">Esta ação não poderá ser desfeita.</p>
+              </div>
+            </div>
+
+            <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3.5 flex items-center gap-3">
+              <img
+                src={productToDelete.image}
+                alt={productToDelete.name}
+                className="w-14 h-14 object-cover rounded-xl border border-slate-200 bg-white shrink-0"
+              />
+              <div className="min-w-0">
+                <p className="font-bold text-sm text-slate-900 truncate">{productToDelete.name}</p>
+                <p className="text-xs text-emerald-600 font-black">
+                  R$ {productToDelete.price.toFixed(2).replace('.', ',')}
+                </p>
+                <p className="text-[11px] text-slate-400 capitalize">Categoria: {productToDelete.category}</p>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setProductToDelete(null)}
+                disabled={isDeletingProduct}
+                className="px-4 py-2 text-xs font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-xl transition-colors"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDeleteProduct}
+                disabled={isDeletingProduct}
+                className="px-4 py-2 text-xs font-black text-white bg-red-600 hover:bg-red-700 rounded-xl shadow-lg transition-colors flex items-center gap-1.5"
+              >
+                {isDeletingProduct ? (
+                  <>
+                    <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    <span>Excluindo...</span>
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Sim, Excluir Produto</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );

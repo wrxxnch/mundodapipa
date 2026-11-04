@@ -1,10 +1,11 @@
-import React from 'react';
-import { Star, ShoppingCart, ExternalLink, Check, Eye, Pencil, Trash2, ShieldCheck, DollarSign, Video } from 'lucide-react';
-import { Product } from '../types';
+import React, { useMemo } from 'react';
+import { Star, ShoppingCart, ExternalLink, Check, Eye, Pencil, Trash2, ShieldCheck, DollarSign, Video, Tag, Percent } from 'lucide-react';
+import { Product, Coupon } from '../types';
 import { FastImage } from './FastImage';
 
 interface ProductCardProps {
   product: Product;
+  coupons?: Coupon[];
   onAddToCart: (product: Product) => void;
   onQuickView: (product: Product) => void;
   isAdmin?: boolean;
@@ -15,6 +16,7 @@ interface ProductCardProps {
 
 export const ProductCard: React.FC<ProductCardProps> = ({
   product,
+  coupons = [],
   onAddToCart,
   onQuickView,
   isAdmin,
@@ -23,6 +25,17 @@ export const ProductCard: React.FC<ProductCardProps> = ({
   onDeleteProduct,
 }) => {
   const [added, setAdded] = React.useState(false);
+
+  // Check if an active promotional coupon applies to this product
+  const appliedCoupon = useMemo(() => {
+    if (!coupons || coupons.length === 0) return null;
+    // Prefer product-specific coupon if available, otherwise fallback to storewide
+    const specific = coupons.find(
+      (c) => c.active && c.applicableProductIds && c.applicableProductIds.includes(product.id)
+    );
+    if (specific) return specific;
+    return coupons.find((c) => c.active && c.appliesToAll);
+  }, [coupons, product.id]);
 
   const handleAdd = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -34,7 +47,11 @@ export const ProductCard: React.FC<ProductCardProps> = ({
   return (
     <div
       onClick={() => onQuickView(product)}
-      className="group bg-white rounded-3xl p-5 card-shadow border border-slate-100 hover:border-sky-300 transition-all duration-300 flex flex-col justify-between cursor-pointer relative transform hover:-translate-y-1"
+      className={`group bg-white rounded-3xl p-5 card-shadow border transition-all duration-300 flex flex-col justify-between cursor-pointer relative transform hover:-translate-y-1 ${
+        appliedCoupon
+          ? 'border-amber-300/90 hover:border-orange-500 shadow-md shadow-amber-500/10'
+          : 'border-slate-100 hover:border-sky-300'
+      }`}
     >
       {/* Admin Quick Action Overlay Toolbar */}
       {isAdmin && (
@@ -95,18 +112,31 @@ export const ProductCard: React.FC<ProductCardProps> = ({
 
         {/* Diamond Kite Badge */}
         {product.badge ? (
-          <span className="absolute top-3 left-3 bg-orange-600 text-white text-[10px] font-black uppercase px-2.5 py-1 rounded-full shadow-md tracking-wider">
+          <span className="absolute top-3 left-3 bg-orange-600 text-white text-[10px] font-black uppercase px-2.5 py-1 rounded-full shadow-md tracking-wider z-10">
             {product.badge}
           </span>
         ) : (
-          <div className="absolute top-3 left-3 diamond-shape w-6 h-6 bg-amber-400 border-white text-[8px] font-black text-slate-900 flex items-center justify-center">
+          <div className="absolute top-3 left-3 diamond-shape w-6 h-6 bg-amber-400 border-white text-[8px] font-black text-slate-900 flex items-center justify-center z-10">
             <span className="-rotate-45">PIPA</span>
+          </div>
+        )}
+
+        {/* Promotional Coupon Badge & Tag */}
+        {appliedCoupon && (
+          <div className="absolute top-2.5 right-2.5 z-10 flex flex-col items-end gap-1">
+            <span className="bg-gradient-to-r from-red-600 via-orange-600 to-amber-500 text-white text-[10px] sm:text-[11px] font-black uppercase px-2.5 py-1 rounded-full shadow-lg border border-white/40 flex items-center gap-1.5 animate-pulse">
+              <Tag className="w-3.5 h-3.5 fill-amber-300 text-amber-300" />
+              <span>{appliedCoupon.discountPercent}% OFF</span>
+            </span>
+            <span className="bg-slate-950/90 text-amber-300 text-[9px] font-mono font-black px-2 py-0.5 rounded-md shadow border border-amber-400/30">
+              {appliedCoupon.code}
+            </span>
           </div>
         )}
 
         {/* Video demo indicator */}
         {(Boolean(product.videoUrl) || Boolean(product.videos && product.videos.length > 0)) && (
-          <span className="absolute bottom-3 left-3 bg-slate-900/85 backdrop-blur-sm text-amber-300 text-[10px] font-black px-2 py-0.5 rounded-md shadow flex items-center gap-1 border border-amber-400/30">
+          <span className="absolute bottom-3 left-3 bg-slate-900/85 backdrop-blur-sm text-amber-300 text-[10px] font-black px-2 py-0.5 rounded-md shadow flex items-center gap-1 border border-amber-400/30 z-10">
             <Video className="w-3 h-3 text-red-500 fill-red-500" />
             <span>Com Vídeo</span>
           </span>
@@ -118,7 +148,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
             e.stopPropagation();
             onQuickView(product);
           }}
-          className="absolute bottom-3 right-3 bg-white/90 hover:bg-slate-900 hover:text-white text-slate-800 p-2 rounded-full shadow-md transition-all opacity-90 sm:opacity-0 group-hover:opacity-100"
+          className="absolute bottom-3 right-3 bg-white/90 hover:bg-slate-900 hover:text-white text-slate-800 p-2 rounded-full shadow-md transition-all opacity-90 sm:opacity-0 group-hover:opacity-100 z-10"
           title="Ver detalhes e vídeo"
         >
           <Eye className="w-4 h-4" />
@@ -163,13 +193,32 @@ export const ProductCard: React.FC<ProductCardProps> = ({
         {/* Price & Action Row */}
         <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between gap-2">
           <div className="flex flex-col">
-            <span className="text-2xl font-black text-emerald-600 font-sans tracking-tight">
-              R$ {product.price.toFixed(2).replace('.', ',')}
-            </span>
-            {Boolean(product.originalPrice && product.originalPrice > product.price) && (
-              <span className="text-[11px] text-slate-400 line-through -mt-1">
-                R$ {product.originalPrice!.toFixed(2).replace('.', ',')}
-              </span>
+            {appliedCoupon ? (
+              <>
+                <div className="flex items-baseline gap-1.5">
+                  <span className="text-2xl font-black text-emerald-600 font-sans tracking-tight">
+                    R$ {(product.price * (1 - appliedCoupon.discountPercent / 100)).toFixed(2).replace('.', ',')}
+                  </span>
+                  <span className="text-xs text-slate-400 line-through">
+                    R$ {product.price.toFixed(2).replace('.', ',')}
+                  </span>
+                </div>
+                <span className="text-[10px] font-bold text-amber-600 flex items-center gap-1 mt-0.5">
+                  <Tag className="w-3 h-3 text-orange-500" />
+                  <span>c/ cupom <strong>{appliedCoupon.code}</strong> (-{appliedCoupon.discountPercent}%)</span>
+                </span>
+              </>
+            ) : (
+              <>
+                <span className="text-2xl font-black text-emerald-600 font-sans tracking-tight">
+                  R$ {product.price.toFixed(2).replace('.', ',')}
+                </span>
+                {Boolean(product.originalPrice && product.originalPrice > product.price) && (
+                  <span className="text-[11px] text-slate-400 line-through -mt-1">
+                    R$ {product.originalPrice!.toFixed(2).replace('.', ',')}
+                  </span>
+                )}
+              </>
             )}
           </div>
 

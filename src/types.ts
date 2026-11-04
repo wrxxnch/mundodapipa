@@ -60,6 +60,7 @@ export interface Coupon {
   discountPercent: number; // 1 to 100
   description?: string;
   active: boolean;
+  showOnSite?: boolean; // whether to show/highlight this coupon on the site (Hero promo & cart)
   appliesToAll: boolean; // true = all items in catalog
   applicableProductIds: string[]; // IDs of products if appliesToAll is false
   createdAt?: string;

@@ -1,9 +1,10 @@
-import React, { useState } from 'react';
-import { X, Star, ShoppingCart, ExternalLink, Check, ShieldCheck, Truck, Sparkles, MessageSquare, CornerDownRight, Video, Play, Image as ImageIcon } from 'lucide-react';
-import { Product } from '../types';
+import React, { useState, useEffect } from 'react';
+import { X, Star, ShoppingCart, ExternalLink, Check, ShieldCheck, Truck, Sparkles, MessageSquare, CornerDownRight, Video, Play, Image as ImageIcon, Tag } from 'lucide-react';
+import { Product, Coupon } from '../types';
 import { ShippingCalculator } from './ShippingCalculator';
 import { FastImage } from './FastImage';
 import { SmartVideoPlayer } from './SmartVideoPlayer';
+import { subscribeToCoupons } from '../lib/firebase';
 
 interface ProductModalProps {
   product: Product | null;
@@ -20,8 +21,20 @@ export const ProductModal: React.FC<ProductModalProps> = ({
   const [added, setAdded] = useState(false);
   const [activeTab, setActiveTab] = useState<'photo' | 'video'>('photo');
   const [selectedPhotoIndex, setSelectedPhotoIndex] = useState(0);
+  const [activeCoupons, setActiveCoupons] = useState<Coupon[]>([]);
+
+  useEffect(() => {
+    const unsub = subscribeToCoupons((coupons) => {
+      setActiveCoupons(coupons.filter((c) => c.active && c.showOnSite !== false));
+    });
+    return () => unsub();
+  }, []);
 
   if (!product) return null;
+
+  const applicableCoupon = activeCoupons.find(
+    (c) => c.appliesToAll || (c.applicableProductIds && c.applicableProductIds.includes(product.id))
+  );
 
   const galleryImages = product.images && product.images.length > 0 ? product.images : [product.image];
   const activeImage = galleryImages[selectedPhotoIndex] || product.image;
@@ -136,13 +149,35 @@ export const ProductModal: React.FC<ProductModalProps> = ({
               </h2>
 
               <div className="mt-3 flex items-baseline gap-3">
-                <span className="text-3xl font-black text-slate-900 font-serif">
-                  R$ {product.price.toFixed(2).replace('.', ',')}
-                </span>
-                {Boolean(product.originalPrice && product.originalPrice > product.price) && (
-                  <span className="text-sm text-slate-400 line-through">
-                    R$ {product.originalPrice!.toFixed(2).replace('.', ',')}
-                  </span>
+                {applicableCoupon ? (
+                  <div className="flex flex-col">
+                    <div className="flex items-baseline gap-2.5">
+                      <span className="text-3xl font-black text-emerald-600 font-serif">
+                        R$ {(product.price * (1 - applicableCoupon.discountPercent / 100)).toFixed(2).replace('.', ',')}
+                      </span>
+                      <span className="text-base text-slate-400 line-through">
+                        R$ {product.price.toFixed(2).replace('.', ',')}
+                      </span>
+                      <span className="bg-emerald-600 text-white font-black text-xs px-2.5 py-0.5 rounded-full flex items-center gap-1 shadow-xs">
+                        <Tag className="w-3 h-3 text-amber-300" />
+                        <span>{applicableCoupon.discountPercent}% OFF</span>
+                      </span>
+                    </div>
+                    <span className="text-xs text-amber-600 font-bold mt-1 flex items-center gap-1">
+                      <span>Preço promocional aplicando cupom <strong>{applicableCoupon.code}</strong></span>
+                    </span>
+                  </div>
+                ) : (
+                  <>
+                    <span className="text-3xl font-black text-slate-900 font-serif">
+                      R$ {product.price.toFixed(2).replace('.', ',')}
+                    </span>
+                    {Boolean(product.originalPrice && product.originalPrice > product.price) && (
+                      <span className="text-sm text-slate-400 line-through">
+                        R$ {product.originalPrice!.toFixed(2).replace('.', ',')}
+                      </span>
+                    )}
+                  </>
                 )}
               </div>
 
@@ -164,6 +199,28 @@ export const ProductModal: React.FC<ProductModalProps> = ({
                   </span>
                 )}
               </div>
+
+              {/* Promotional Coupon Callout */}
+              {applicableCoupon && (
+                <div className="mt-3 bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-300/80 rounded-2xl p-2.5 flex items-center justify-between gap-2 shadow-sm animate-fadeIn">
+                  <div className="flex items-center gap-2">
+                    <div className="w-7 h-7 rounded-lg bg-orange-600 text-white flex items-center justify-center font-black text-xs shrink-0">
+                      %
+                    </div>
+                    <div>
+                      <p className="text-xs font-black text-slate-900 leading-tight">
+                        Cupom <span className="font-mono text-orange-600 font-extrabold">{applicableCoupon.code}</span> ({applicableCoupon.discountPercent}% OFF)
+                      </p>
+                      <p className="text-[11px] text-slate-600">
+                        Desconto aplicado automaticamente na finalização da compra!
+                      </p>
+                    </div>
+                  </div>
+                  <span className="bg-orange-600 text-white text-[10px] font-black uppercase px-2 py-0.5 rounded-full shrink-0">
+                    Promoção
+                  </span>
+                </div>
+              )}
 
               <p className="text-slate-600 text-sm mt-3 leading-relaxed">
                 {product.description}

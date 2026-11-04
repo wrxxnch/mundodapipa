@@ -1150,6 +1150,7 @@ export const subscribeToCoupons = (
               discountPercent: Number(data.discountPercent) || 0,
               description: data.description || '',
               active: data.active !== undefined ? Boolean(data.active) : true,
+              showOnSite: data.showOnSite !== undefined ? Boolean(data.showOnSite) : true,
               appliesToAll: data.appliesToAll !== undefined ? Boolean(data.appliesToAll) : true,
               applicableProductIds: Array.isArray(data.applicableProductIds) ? data.applicableProductIds : [],
               createdAt: data.createdAt || new Date().toISOString(),
@@ -1192,6 +1193,7 @@ export const saveCouponToFirestore = async (
     discountPercent: Math.min(100, Math.max(1, Number(couponData.discountPercent) || 10)),
     description: couponData.description?.trim() || '',
     active: couponData.active !== undefined ? couponData.active : true,
+    showOnSite: couponData.showOnSite !== undefined ? Boolean(couponData.showOnSite) : true,
     appliesToAll: Boolean(couponData.appliesToAll),
     applicableProductIds: Array.isArray(couponData.applicableProductIds) ? couponData.applicableProductIds : [],
     createdAt: couponData.createdAt || new Date().toISOString(),
@@ -1257,6 +1259,26 @@ export const toggleCouponStatusInFirestore = async (
     await setDoc(docRef, { active: newStatus, updatedAt: new Date().toISOString() }, { merge: true });
   } catch (error) {
     console.warn('Could not update coupon status in Firestore, updated locally:', error);
+  }
+};
+
+export const toggleCouponShowOnSiteInFirestore = async (
+  couponId: string,
+  currentShowOnSite: boolean
+): Promise<void> => {
+  const newShowOnSite = !currentShowOnSite;
+  
+  // Update local storage immediately
+  const local = getLocalCoupons();
+  const updated = local.map((c) => (c.id === couponId ? { ...c, showOnSite: newShowOnSite } : c));
+  setLocalCoupons(updated);
+
+  // Sync to Firestore
+  try {
+    const docRef = doc(db, 'coupons', couponId);
+    await setDoc(docRef, { showOnSite: newShowOnSite, updatedAt: new Date().toISOString() }, { merge: true });
+  } catch (error) {
+    console.warn('Could not update coupon showOnSite in Firestore, updated locally:', error);
   }
 };
 

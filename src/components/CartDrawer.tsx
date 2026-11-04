@@ -11,7 +11,8 @@ import {
   Tag, 
   Check, 
   AlertCircle, 
-  Percent 
+  Percent,
+  Sparkles 
 } from 'lucide-react';
 import { CartItem, Coupon } from '../types';
 import { SHOPEE_STORE_URL, WHATSAPP_NUMBER } from '../data/products';
@@ -26,6 +27,7 @@ interface CartDrawerProps {
   onRemoveItem: (productId: string) => void;
   onClearCart: () => void;
   user?: UserProfile | null;
+  initialCouponCode?: string | null;
 }
 
 export const CartDrawer: React.FC<CartDrawerProps> = ({
@@ -35,7 +37,8 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
   onUpdateQuantity,
   onRemoveItem,
   onClearCart,
-  user
+  user,
+  initialCouponCode
 }) => {
   const [selectedShipping, setSelectedShipping] = useState<ShippingOption | null>(null);
   const [shippingAddress, setShippingAddress] = useState<{ cep: string; address: string } | null>(null);
@@ -66,6 +69,21 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
     });
     return () => unsub();
   }, [appliedCoupon]);
+
+  // Auto-apply initial coupon code passed from Hero or elsewhere
+  useEffect(() => {
+    if (isOpen && initialCouponCode && availableCoupons.length > 0) {
+      const target = availableCoupons.find(
+        (c) => c.code.toUpperCase() === initialCouponCode.toUpperCase() && c.active
+      );
+      if (target) {
+        setAppliedCoupon(target);
+        setCouponSuccess(`Cupom ${target.code} ativado no carrinho! Aproveite ${target.discountPercent}% OFF.`);
+        setCouponError(null);
+        setTimeout(() => setCouponSuccess(null), 3000);
+      }
+    }
+  }, [isOpen, initialCouponCode, availableCoupons]);
 
   if (!isOpen) return null;
 
@@ -355,6 +373,54 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                     </button>
                   )}
                 </div>
+
+                {/* Quick Pick: Active Public Coupons on the Site */}
+                {availableCoupons.filter((c) => c.active && c.showOnSite !== false).length > 0 && (
+                  <div className="bg-gradient-to-r from-orange-50 via-amber-50 to-orange-50 p-2.5 rounded-xl border border-orange-200/90 space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-black uppercase tracking-wider text-orange-950 flex items-center gap-1">
+                        <Sparkles className="w-3 h-3 text-orange-600" />
+                        <span>Cupons Promocionais do Site</span>
+                      </span>
+                      <span className="text-[10px] font-bold text-orange-700">Toque para usar:</span>
+                    </div>
+
+                    <div className="flex flex-wrap gap-1.5">
+                      {availableCoupons
+                        .filter((c) => c.active && c.showOnSite !== false)
+                        .map((c) => {
+                          const isCurrent = appliedCoupon?.id === c.id;
+                          return (
+                            <button
+                              key={c.id}
+                              type="button"
+                              onClick={() => {
+                                setAppliedCoupon(c);
+                                setInputCouponCode(c.code);
+                                setCouponSuccess(`Cupom ${c.code} (${c.discountPercent}% OFF) ativado com sucesso!`);
+                                setCouponError(null);
+                                setTimeout(() => setCouponSuccess(null), 3000);
+                              }}
+                              className={`text-xs font-black px-2.5 py-1.5 rounded-lg border transition-all flex items-center gap-1.5 font-mono ${
+                                isCurrent
+                                  ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm'
+                                  : 'bg-white hover:bg-orange-100/60 text-slate-900 border-orange-300 hover:border-orange-400'
+                              }`}
+                            >
+                              <Tag className={`w-3 h-3 ${isCurrent ? 'text-white' : 'text-orange-600'}`} />
+                              <span>{c.code}</span>
+                              <span className={`text-[10px] px-1 py-0.2 rounded font-sans font-bold ${
+                                isCurrent ? 'bg-emerald-700 text-emerald-100' : 'bg-orange-100 text-orange-800'
+                              }`}>
+                                {c.discountPercent}% OFF
+                              </span>
+                              {isCurrent && <Check className="w-3 h-3 text-white ml-0.5" />}
+                            </button>
+                          );
+                        })}
+                    </div>
+                  </div>
+                )}
 
                 {!appliedCoupon ? (
                   <form onSubmit={handleApplyCoupon} className="flex gap-2">
