@@ -134,10 +134,11 @@ export const Header: React.FC<HeaderProps> = ({
                 {user.role === 'admin' && onOpenAdminSettings && (
                   <button
                     onClick={onOpenAdminSettings}
-                    className="bg-slate-800 hover:bg-slate-700 text-amber-400 p-1.5 rounded-full transition-colors border border-slate-700"
-                    title="Configurações de Ordenação (Admin)"
+                    className="bg-slate-800 hover:bg-slate-700 text-amber-400 px-2 py-1.5 rounded-full transition-colors border border-slate-700 flex items-center gap-1 font-black text-[11px]"
+                    title="Painel Admin: Cupons Promocionais & Ordenação"
                   >
                     <Settings className="w-3.5 h-3.5" />
+                    <span className="hidden xl:inline">Cupons & Ajustes</span>
                   </button>
                 )}
 

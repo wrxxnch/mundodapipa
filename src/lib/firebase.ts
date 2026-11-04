@@ -28,7 +28,7 @@ import {
 } from 'firebase/auth';
 
 import firebaseConfig from '../../firebase-applet-config.json';
-import { Product, CartItem, Post } from '../types';
+import { Product, CartItem, Post, Coupon } from '../types';
 import { PRODUCTS as DEFAULT_PRODUCTS } from '../data/products';
 import { SHOPEE_PRODUCT_FIO10 } from '../data/shopeeData';
 
@@ -1072,6 +1072,191 @@ export const subscribeToCatalogSettings = (
     return unsubscribe;
   } catch {
     return () => {};
+  }
+};
+
+// ==========================================
+// PROMOTIONAL COUPONS MANAGEMENT
+// ==========================================
+
+const COUPONS_STORAGE_KEY = 'mundo_pipa_coupons';
+
+const DEFAULT_COUPONS: Coupon[] = [];
+
+export const getLocalCoupons = (): Coupon[] => {
+  try {
+    const stored = localStorage.getItem(COUPONS_STORAGE_KEY);
+    if (stored !== null) {
+      const parsed = JSON.parse(stored);
+      if (Array.isArray(parsed)) {
+        // Remove example coupon if present
+        const filtered = parsed.filter(
+          (c) => c && c.id !== 'default-pipa10' && c.code !== 'PIPA10'
+        );
+        if (filtered.length !== parsed.length) {
+          localStorage.setItem(COUPONS_STORAGE_KEY, JSON.stringify(filtered));
+        }
+        return filtered;
+      }
+    }
+  } catch (e) {
+    console.warn('Error reading local coupons:', e);
+  }
+  return [];
+};
+
+export const setLocalCoupons = (coupons: Coupon[]) => {
+  try {
+    const cleaned = coupons.filter(
+      (c) => c && c.id !== 'default-pipa10' && c.code !== 'PIPA10'
+    );
+    localStorage.setItem(COUPONS_STORAGE_KEY, JSON.stringify(cleaned));
+  } catch (e) {
+    console.warn('Error saving local coupons:', e);
+  }
+};
+
+export const subscribeToCoupons = (
+  onData: (coupons: Coupon[]) => void
+): (() => void) => {
+  // 1. Immediately provide cached/local coupons (filtered from any example)
+  const cached = getLocalCoupons();
+  onData(cached);
+
+  // 2. Realtime Firestore sync
+  try {
+    const couponsCol = collection(db, 'coupons');
+    const unsubscribe = onSnapshot(
+      couponsCol,
+      (snapshot) => {
+        if (!snapshot.empty) {
+          const remoteCoupons: Coupon[] = [];
+          snapshot.forEach((docSnap) => {
+            const data = docSnap.data();
+            const id = docSnap.id;
+            const code = String(data.code || '').toUpperCase().trim();
+
+            // If it is the example coupon, remove it from Firestore and do not display it
+            if (id === 'default-pipa10' || code === 'PIPA10') {
+              try {
+                deleteDoc(doc(db, 'coupons', id)).catch(() => {});
+              } catch (_) {}
+              return;
+            }
+
+            remoteCoupons.push({
+              id,
+              code,
+              discountPercent: Number(data.discountPercent) || 0,
+              description: data.description || '',
+              active: data.active !== undefined ? Boolean(data.active) : true,
+              appliesToAll: data.appliesToAll !== undefined ? Boolean(data.appliesToAll) : true,
+              applicableProductIds: Array.isArray(data.applicableProductIds) ? data.applicableProductIds : [],
+              createdAt: data.createdAt || new Date().toISOString(),
+              updatedAt: data.updatedAt
+            });
+          });
+
+          // Sort by creation or code
+          remoteCoupons.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+          setLocalCoupons(remoteCoupons);
+          onData(remoteCoupons);
+        } else {
+          // If Firestore is empty, provide clean empty list
+          const local = getLocalCoupons();
+          onData(local);
+        }
+      },
+      (error) => {
+        console.warn('Coupons Firestore sync error, using local cache:', error);
+        onData(getLocalCoupons());
+      }
+    );
+    return unsubscribe;
+  } catch (error) {
+    console.warn('Coupons collection listen error:', error);
+    return () => {};
+  }
+};
+
+export const saveCouponToFirestore = async (
+  couponData: Omit<Coupon, 'id'> & { id?: string },
+  userEmail?: string
+): Promise<string> => {
+  const normalizedCode = couponData.code.toUpperCase().trim();
+  const id = couponData.id || `coupon_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+  
+  const newCoupon: Coupon = {
+    id,
+    code: normalizedCode,
+    discountPercent: Math.min(100, Math.max(1, Number(couponData.discountPercent) || 10)),
+    description: couponData.description?.trim() || '',
+    active: couponData.active !== undefined ? couponData.active : true,
+    appliesToAll: Boolean(couponData.appliesToAll),
+    applicableProductIds: Array.isArray(couponData.applicableProductIds) ? couponData.applicableProductIds : [],
+    createdAt: couponData.createdAt || new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  };
+
+  // Update local storage immediately for responsive UI
+  const local = getLocalCoupons();
+  const existingIdx = local.findIndex((c) => c.id === id || c.code === normalizedCode);
+  let updatedList: Coupon[];
+  if (existingIdx >= 0) {
+    updatedList = [...local];
+    updatedList[existingIdx] = newCoupon;
+  } else {
+    updatedList = [newCoupon, ...local];
+  }
+  setLocalCoupons(updatedList);
+
+  // Sync to Firestore
+  try {
+    const docRef = doc(db, 'coupons', id);
+    const dataToSave = cleanFirestoreData({
+      ...newCoupon,
+      updatedBy: userEmail || 'admin'
+    });
+    await setDoc(docRef, dataToSave, { merge: true });
+    return id;
+  } catch (error) {
+    console.warn('Could not persist coupon to Firestore, saved locally:', error);
+    return id;
+  }
+};
+
+export const deleteCouponFromFirestore = async (couponId: string): Promise<void> => {
+  // Update local storage immediately
+  const local = getLocalCoupons();
+  const filtered = local.filter((c) => c.id !== couponId);
+  setLocalCoupons(filtered);
+
+  // Delete from Firestore
+  try {
+    const docRef = doc(db, 'coupons', couponId);
+    await deleteDoc(docRef);
+  } catch (error) {
+    console.warn('Could not delete coupon from Firestore, removed locally:', error);
+  }
+};
+
+export const toggleCouponStatusInFirestore = async (
+  couponId: string,
+  currentStatus: boolean
+): Promise<void> => {
+  const newStatus = !currentStatus;
+  
+  // Update local storage immediately
+  const local = getLocalCoupons();
+  const updated = local.map((c) => (c.id === couponId ? { ...c, active: newStatus } : c));
+  setLocalCoupons(updated);
+
+  // Sync to Firestore
+  try {
+    const docRef = doc(db, 'coupons', couponId);
+    await setDoc(docRef, { active: newStatus, updatedAt: new Date().toISOString() }, { merge: true });
+  } catch (error) {
+    console.warn('Could not update coupon status in Firestore, updated locally:', error);
   }
 };
 

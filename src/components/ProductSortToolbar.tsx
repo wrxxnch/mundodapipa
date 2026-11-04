@@ -80,10 +80,10 @@ export const ProductSortToolbar: React.FC<ProductSortToolbarProps> = ({
             type="button"
             onClick={onOpenAdminSettings}
             className="flex items-center gap-1.5 text-[11px] font-black text-slate-700 hover:text-orange-600 bg-slate-100 hover:bg-orange-50 px-3 py-1.5 rounded-xl border border-slate-200 transition-colors cursor-pointer"
-            title="Configurar ordenação padrão do catálogo"
+            title="Painel Admin: Cupons Promocionais e Ordenação do Catálogo"
           >
             <Settings className="w-3.5 h-3.5 text-orange-500" />
-            <span>Padrão Admin: {defaultSortNewest ? 'Mais Novos (Ativo)' : 'Personalizado'}</span>
+            <span>Painel Admin: Cupons & Ordenação</span>
           </button>
         )}
       </div>

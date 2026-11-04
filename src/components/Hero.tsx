@@ -1,19 +1,36 @@
-import React from 'react';
-import { ShoppingBag, Award, Star, ExternalLink, ShieldCheck, Sparkles, MessageCircle, Instagram } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { ShoppingBag, Award, Star, ExternalLink, ShieldCheck, Sparkles, MessageCircle, Instagram, Tag, Percent } from 'lucide-react';
 import logoImg from '../assets/images/logo.png';
 import { SHOPEE_STORE_URL, WHATSAPP_NUMBER } from '../data/products';
+import { subscribeToCoupons } from '../lib/firebase';
+import { Coupon } from '../types';
 
 interface HeroProps {
   onExploreClick: () => void;
+  onOpenCart?: () => void;
 }
 
-export const Hero: React.FC<HeroProps> = ({ onExploreClick }) => {
+export const Hero: React.FC<HeroProps> = ({ onExploreClick, onOpenCart }) => {
+  const [activeCoupon, setActiveCoupon] = useState<Coupon | null>(null);
+
+  useEffect(() => {
+    const unsub = subscribeToCoupons((coupons) => {
+      const active = coupons.find((c) => c.active);
+      setActiveCoupon(active || null);
+    });
+    return () => unsub();
+  }, []);
+
   return (
     <section className="bg-slate-950 text-white py-12 sm:py-16 lg:py-20 px-4 sm:px-6 lg:px-8 flex flex-col items-center justify-center text-center shadow-xl relative border-b border-slate-800 overflow-hidden">
       
-      {/* Background Radial Glow */}
-      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-orange-600/10 rounded-full blur-3xl pointer-events-none"></div>
-      <div className="absolute top-0 right-0 w-80 h-80 bg-sky-500/10 rounded-full blur-3xl pointer-events-none"></div>
+      {/* Seamless Ambient Lighting - Soft continuous radial gradient without hard circular disc edges */}
+      <div 
+        className="absolute inset-0 pointer-events-none"
+        style={{
+          background: 'radial-gradient(circle at 50% 20%, rgba(234, 88, 12, 0.12) 0%, rgba(245, 158, 11, 0.04) 40%, rgba(2, 6, 23, 0) 75%)'
+        }}
+      />
 
       <div className="relative z-10 max-w-4xl mx-auto flex flex-col items-center w-full">
         
@@ -36,10 +53,24 @@ export const Hero: React.FC<HeroProps> = ({ onExploreClick }) => {
 
         {/* Brand Headline */}
         <div className="mt-4">
-          <span className="inline-flex items-center gap-1.5 bg-slate-900 border border-slate-800 text-amber-400 text-xs font-black uppercase tracking-widest px-4 py-1.5 rounded-full mb-3 shadow-inner">
-            <Sparkles className="w-3.5 h-3.5" />
-            <span>Dedicação à Arte das Pipas</span>
-          </span>
+          <div className="flex flex-wrap items-center justify-center gap-2 mb-3">
+            <span className="inline-flex items-center gap-1.5 bg-slate-900 border border-slate-800 text-amber-400 text-xs font-black uppercase tracking-widest px-4 py-1.5 rounded-full shadow-inner">
+              <Sparkles className="w-3.5 h-3.5" />
+              <span>Dedicação à Arte das Pipas</span>
+            </span>
+
+            {/* Featured Active Coupon Badge */}
+            {activeCoupon && (
+              <span 
+                onClick={onOpenCart}
+                className="inline-flex items-center gap-1.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-black uppercase tracking-wider px-3.5 py-1.5 rounded-full shadow-lg border border-emerald-400/50 cursor-pointer animate-pulse transition-all transform hover:scale-105"
+                title="Clique para abrir o carrinho e aproveitar o cupom"
+              >
+                <Tag className="w-3.5 h-3.5 text-amber-300" />
+                <span>Cupom {activeCoupon.code}: {activeCoupon.discountPercent}% OFF</span>
+              </span>
+            )}
+          </div>
 
           <h1 className="text-3xl sm:text-4xl md:text-5xl font-black text-white uppercase tracking-tight leading-tight">
             MUNDO DA PIPA

@@ -54,3 +54,15 @@ export interface Post {
   createdAt: string;
 }
 
+export interface Coupon {
+  id: string;
+  code: string; // e.g. "PIPA10"
+  discountPercent: number; // 1 to 100
+  description?: string;
+  active: boolean;
+  appliesToAll: boolean; // true = all items in catalog
+  applicableProductIds: string[]; // IDs of products if appliesToAll is false
+  createdAt?: string;
+  updatedAt?: string;
+}
+

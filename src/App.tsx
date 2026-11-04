@@ -350,7 +350,10 @@ export default function App() {
 
 
       {/* Hero Banner Section */}
-      <Hero onExploreClick={scrollToProducts} />
+      <Hero 
+        onExploreClick={scrollToProducts} 
+        onOpenCart={() => setIsCartOpen(true)} 
+      />
 
       {/* Main Container */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-12">
@@ -534,11 +537,12 @@ export default function App() {
         product={productToEditPrice}
       />
 
-      {/* Admin Catalog Settings Modal (Default Sort, etc.) */}
+      {/* Admin Catalog Settings & Promo Codes Modal */}
       <AdminSettingsModal
         isOpen={isAdminSettingsOpen}
         onClose={() => setIsAdminSettingsOpen(false)}
         currentSettings={catalogSettings}
+        products={products}
         onSettingsSaved={(newSettings) => {
           setCatalogSettings(newSettings);
           if (newSettings.defaultSortNewest) {
