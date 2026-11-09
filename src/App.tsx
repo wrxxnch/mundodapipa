@@ -16,7 +16,7 @@ import { EditPriceModal } from './components/EditPriceModal';
 import { AdminSettingsModal } from './components/AdminSettingsModal';
 import { ProductSortToolbar } from './components/ProductSortToolbar';
 
-import { Category, Product, CartItem, SortOption, Coupon } from './types';
+import { Category, Product, CartItem, SortOption, Coupon, CategoryItem } from './types';
 import { PRODUCTS as DEFAULT_PRODUCTS } from './data/products';
 import { 
   subscribeToProducts, 
@@ -29,6 +29,8 @@ import {
   saveUserCartToFirestore,
   subscribeToUserCart,
   subscribeToCoupons,
+  subscribeToCategories,
+  getLocalCategories,
   UserProfile,
   CatalogSettings,
   getLocalCatalogSettings,
@@ -58,6 +60,9 @@ export default function App() {
 
   // Coupons State (for promotion badges on products)
   const [coupons, setCoupons] = useState<Coupon[]>([]);
+
+  // Categories State (dynamically managed by Admin)
+  const [categories, setCategories] = useState<CategoryItem[]>(() => getLocalCategories());
 
   // Deletion confirmation modal state (eliminates window.confirm)
   const [productToDelete, setProductToDelete] = useState<Product | null>(null);
@@ -180,6 +185,14 @@ export default function App() {
   useEffect(() => {
     const unsubscribe = subscribeToCoupons((realtimeCoupons) => {
       setCoupons(realtimeCoupons);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  // Real-time Categories subscription
+  useEffect(() => {
+    const unsubscribe = subscribeToCategories((realtimeCategories) => {
+      setCategories(realtimeCategories);
     });
     return () => unsubscribe();
   }, []);
@@ -368,6 +381,7 @@ export default function App() {
       <Header
         activeCategory={activeCategory}
         onSelectCategory={setActiveCategory}
+        categories={categories}
         searchQuery={searchQuery}
         onSearchChange={setSearchQuery}
         cartCount={cartCount}
@@ -560,6 +574,7 @@ export default function App() {
         isOpen={isAdminModalOpen}
         onClose={() => setIsAdminModalOpen(false)}
         productToEdit={productToEdit}
+        categories={categories}
       />
 
       {/* Admin Quick Price Edit Modal */}

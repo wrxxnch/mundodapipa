@@ -96,6 +96,21 @@
         "updatedAt": { "type": "string" }
       },
       "required": ["code", "discountPercent", "active", "appliesToAll"]
+    },
+    "categories": {
+      "title": "Categories",
+      "description": "Store product categories dynamically managed by administrators",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "label": { "type": "string" },
+        "icon": { "type": "string" },
+        "order": { "type": "number" },
+        "isDefault": { "type": "boolean" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["id", "label"]
     }
   }
 }

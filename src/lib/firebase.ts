@@ -28,7 +28,7 @@ import {
 } from 'firebase/auth';
 
 import firebaseConfig from '../../firebase-applet-config.json';
-import { Product, CartItem, Post, Coupon } from '../types';
+import { Product, CartItem, Post, Coupon, CategoryItem } from '../types';
 import { PRODUCTS as DEFAULT_PRODUCTS } from '../data/products';
 import { SHOPEE_PRODUCT_FIO10 } from '../data/shopeeData';
 
@@ -1279,6 +1279,152 @@ export const toggleCouponShowOnSiteInFirestore = async (
     await setDoc(docRef, { showOnSite: newShowOnSite, updatedAt: new Date().toISOString() }, { merge: true });
   } catch (error) {
     console.warn('Could not update coupon showOnSite in Firestore, updated locally:', error);
+  }
+};
+
+// ==========================================
+// DYNAMIC CATEGORIES MANAGEMENT
+// ==========================================
+
+export const DEFAULT_CATEGORIES: CategoryItem[] = [
+  { id: 'pipas', label: 'Pipas & Raias', icon: '🪁', isDefault: true, order: 1 },
+  { id: 'linhas', label: 'Linhas', icon: '🧵', isDefault: true, order: 2 },
+  { id: 'rabiolas', label: 'Rabiolas & Fitas', icon: '🎗️', isDefault: true, order: 3 },
+  { id: 'varetas', label: 'Varetas & Carretilhas', icon: '🪵', isDefault: true, order: 4 },
+  { id: 'kits', label: 'Kits Promocionais', icon: '🎁', isDefault: true, order: 5 },
+  { id: 'plastico-embalagens', label: 'Plástico e embalagens', icon: '🛍️', isDefault: true, order: 6 },
+];
+
+const CATEGORIES_KEY = 'mundo_pipa_categories_v2';
+
+export const getLocalCategories = (): CategoryItem[] => {
+  try {
+    const raw = localStorage.getItem(CATEGORIES_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+    }
+  } catch {}
+  return DEFAULT_CATEGORIES;
+};
+
+export const setLocalCategories = (categories: CategoryItem[]): void => {
+  try {
+    localStorage.setItem(CATEGORIES_KEY, JSON.stringify(categories));
+  } catch {}
+};
+
+export const subscribeToCategories = (callback: (categories: CategoryItem[]) => void): (() => void) => {
+  // Emit initial local categories immediately
+  callback(getLocalCategories());
+
+  try {
+    const categoriesCol = collection(db, 'categories');
+    const unsubscribe = onSnapshot(categoriesCol, async (snapshot) => {
+      if (!snapshot.empty) {
+        const loaded: CategoryItem[] = [];
+        snapshot.forEach((docSnap) => {
+          const data = docSnap.data();
+          loaded.push({
+            id: docSnap.id,
+            label: data.label || docSnap.id,
+            icon: data.icon || '🏷️',
+            order: typeof data.order === 'number' ? data.order : 99,
+            isDefault: Boolean(data.isDefault),
+            createdAt: data.createdAt,
+            updatedAt: data.updatedAt
+          });
+        });
+        loaded.sort((a, b) => (a.order || 99) - (b.order || 99));
+        setLocalCategories(loaded);
+        callback(loaded);
+      } else {
+        // Seed default categories into Firestore if collection is empty
+        try {
+          for (const cat of DEFAULT_CATEGORIES) {
+            await setDoc(doc(db, 'categories', cat.id), {
+              label: cat.label,
+              icon: cat.icon || '🏷️',
+              order: cat.order || 99,
+              isDefault: true,
+              createdAt: new Date().toISOString()
+            });
+          }
+        } catch {
+          // Fallback if Firestore write fails
+        }
+        callback(DEFAULT_CATEGORIES);
+      }
+    }, (error) => {
+      console.warn('Error listening to categories in Firestore, using local:', error);
+      callback(getLocalCategories());
+    });
+    return unsubscribe;
+  } catch (error) {
+    console.warn('Failed to subscribe to categories:', error);
+    return () => {};
+  }
+};
+
+export const saveCategoryToFirestore = async (
+  categoryData: { id?: string; label: string; icon?: string; order?: number }
+): Promise<string> => {
+  const cleanLabel = categoryData.label.trim();
+  const rawId = categoryData.id?.trim() || cleanLabel
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+  const id = rawId || `cat-${Date.now()}`;
+
+  const currentLocal = getLocalCategories();
+  const existingIdx = currentLocal.findIndex((c) => c.id === id);
+  const now = new Date().toISOString();
+
+  const newCat: CategoryItem = {
+    id,
+    label: cleanLabel,
+    icon: categoryData.icon || '🏷️',
+    order: categoryData.order ?? (existingIdx >= 0 ? currentLocal[existingIdx].order : currentLocal.length + 1),
+    isDefault: existingIdx >= 0 ? currentLocal[existingIdx].isDefault : false,
+    createdAt: existingIdx >= 0 ? currentLocal[existingIdx].createdAt : now,
+    updatedAt: now
+  };
+
+  const updatedList = existingIdx >= 0
+    ? currentLocal.map((c, idx) => idx === existingIdx ? newCat : c)
+    : [...currentLocal, newCat];
+
+  setLocalCategories(updatedList);
+
+  try {
+    const docRef = doc(db, 'categories', id);
+    await setDoc(docRef, {
+      label: newCat.label,
+      icon: newCat.icon,
+      order: newCat.order,
+      isDefault: newCat.isDefault || false,
+      updatedAt: now,
+      createdAt: newCat.createdAt || now
+    }, { merge: true });
+    return id;
+  } catch (error) {
+    console.warn('Could not save category to Firestore, saved locally:', error);
+    return id;
+  }
+};
+
+export const deleteCategoryFromFirestore = async (categoryId: string): Promise<void> => {
+  const current = getLocalCategories();
+  const filtered = current.filter((c) => c.id !== categoryId);
+  setLocalCategories(filtered);
+
+  try {
+    const docRef = doc(db, 'categories', categoryId);
+    await deleteDoc(docRef);
+  } catch (error) {
+    console.warn('Could not delete category from Firestore, removed locally:', error);
   }
 };
 

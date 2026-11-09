@@ -1,6 +1,6 @@
 import React from 'react';
 import { ShoppingBag, Search, ExternalLink, ShieldCheck, Truck, Sparkles, X, User, Plus, LogOut, Settings } from 'lucide-react';
-import { Category } from '../types';
+import { Category, CategoryItem } from '../types';
 import logoImg from '../assets/images/logo.png';
 import { SHOPEE_STORE_URL } from '../data/products';
 import { UserProfile } from '../lib/firebase';
@@ -8,6 +8,7 @@ import { UserProfile } from '../lib/firebase';
 interface HeaderProps {
   activeCategory: Category;
   onSelectCategory: (cat: Category) => void;
+  categories?: CategoryItem[];
   searchQuery: string;
   onSearchChange: (q: string) => void;
   cartCount: number;
@@ -22,6 +23,7 @@ interface HeaderProps {
 export const Header: React.FC<HeaderProps> = ({
   activeCategory,
   onSelectCategory,
+  categories: customCategories = [],
   searchQuery,
   onSearchChange,
   cartCount,
@@ -32,13 +34,22 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenAddProduct,
   onOpenAdminSettings
 }) => {
-  const categories: { id: Category; label: string; icon: string }[] = [
-    { id: 'todos', label: 'Todos os Produtos', icon: '🪁' },
+  const dynamicItems = customCategories && customCategories.length > 0 ? customCategories : [
     { id: 'pipas', label: 'Pipas & Raias', icon: '🪁' },
-    { id: 'linhas', label: 'Linhas Especializadas', icon: '🧵' },
+    { id: 'linhas', label: 'Linhas', icon: '🧵' },
     { id: 'rabiolas', label: 'Rabiolas & Fitas', icon: '🎗️' },
     { id: 'varetas', label: 'Varetas & Carretilhas', icon: '🪵' },
     { id: 'kits', label: 'Kits Promocionais', icon: '🎁' },
+    { id: 'plastico-embalagens', label: 'Plástico e embalagens', icon: '🛍️' },
+  ];
+
+  const categories: { id: Category; label: string; icon: string }[] = [
+    { id: 'todos', label: 'Todos os Produtos', icon: '🪁' },
+    ...dynamicItems.map((c) => ({
+      id: c.id,
+      label: c.label,
+      icon: c.icon || '🏷️'
+    }))
   ];
 
   return (

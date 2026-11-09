@@ -1,4 +1,14 @@
-export type Category = 'todos' | 'pipas' | 'linhas' | 'rabiolas' | 'varetas' | 'kits';
+export type Category = string;
+
+export interface CategoryItem {
+  id: string;
+  label: string;
+  icon?: string;
+  order?: number;
+  isDefault?: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+}
 
 export interface ProductReview {
   id: string;

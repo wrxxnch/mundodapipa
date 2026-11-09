@@ -4,8 +4,8 @@ import {
   Trash2, Upload, Camera, Link as LinkIcon, CheckCircle2, 
   Sparkles, Video, AlertCircle, Youtube, ExternalLink, Package 
 } from 'lucide-react';
-import { Product, Category } from '../types';
-import { addProductToFirestore, updateProductInFirestore, deleteProductFromFirestore, deleteField } from '../lib/firebase';
+import { Product, Category, CategoryItem } from '../types';
+import { addProductToFirestore, updateProductInFirestore, deleteProductFromFirestore, deleteField, DEFAULT_CATEGORIES } from '../lib/firebase';
 import { compressImageFile } from '../utils/imageCompressor';
 import { saveLocalVideo, fileToDataUrl } from '../utils/mediaStore';
 import { SmartVideoPlayer } from './SmartVideoPlayer';
@@ -14,13 +14,16 @@ interface AdminProductModalProps {
   isOpen: boolean;
   onClose: () => void;
   productToEdit?: Product | null;
+  categories?: CategoryItem[];
 }
 
 export const AdminProductModal: React.FC<AdminProductModalProps> = ({
   isOpen,
   onClose,
-  productToEdit
+  productToEdit,
+  categories: customCategories = []
 }) => {
+  const availableCategories = customCategories && customCategories.length > 0 ? customCategories : DEFAULT_CATEGORIES;
   const [name, setName] = useState('');
   const [category, setCategory] = useState<Category>('pipas');
   const [price, setPrice] = useState<string>('');
@@ -360,11 +363,11 @@ export const AdminProductModal: React.FC<AdminProductModalProps> = ({
                 onChange={(e) => setCategory(e.target.value as Category)}
                 className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm font-bold text-slate-900 focus:outline-none focus:border-orange-500 focus:bg-white"
               >
-                <option value="pipas">Pipas</option>
-                <option value="linhas">Linhas</option>
-                <option value="rabiolas">Rabiolas</option>
-                <option value="varetas">Varetas & Carretilhas</option>
-                <option value="kits">Kits Especiais</option>
+                {availableCategories.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.icon ? `${c.icon} ` : ''}{c.label}
+                  </option>
+                ))}
               </select>
             </div>
           </div>

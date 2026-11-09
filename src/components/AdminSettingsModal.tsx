@@ -21,7 +21,9 @@ import {
   ExternalLink,
   Eye,
   EyeOff,
-  Globe
+  Globe,
+  Layers,
+  FolderPlus
 } from 'lucide-react';
 import { 
   CatalogSettings, 
@@ -30,9 +32,12 @@ import {
   saveCouponToFirestore, 
   deleteCouponFromFirestore, 
   toggleCouponStatusInFirestore,
-  toggleCouponShowOnSiteInFirestore
+  toggleCouponShowOnSiteInFirestore,
+  subscribeToCategories,
+  saveCategoryToFirestore,
+  deleteCategoryFromFirestore
 } from '../lib/firebase';
-import { SortOption, Product, Coupon } from '../types';
+import { SortOption, Product, Coupon, CategoryItem } from '../types';
 
 interface AdminSettingsModalProps {
   isOpen: boolean;
@@ -43,7 +48,7 @@ interface AdminSettingsModalProps {
   userEmail?: string;
 }
 
-type TabType = 'coupons' | 'sorting';
+type TabType = 'coupons' | 'categories' | 'sorting';
 
 export const AdminSettingsModal: React.FC<AdminSettingsModalProps> = ({
   isOpen,
@@ -90,11 +95,29 @@ export const AdminSettingsModal: React.FC<AdminSettingsModalProps> = ({
   const [couponToDelete, setCouponToDelete] = useState<Coupon | null>(null);
   const [isDeletingCoupon, setIsDeletingCoupon] = useState(false);
 
+  // Categories State
+  const [categories, setCategories] = useState<CategoryItem[]>([]);
+  const [isCategoryFormOpen, setIsCategoryFormOpen] = useState(false);
+  const [newCategoryLabel, setNewCategoryLabel] = useState('');
+  const [newCategoryIcon, setNewCategoryIcon] = useState('🛍️');
+  const [savingCategory, setSavingCategory] = useState(false);
+  const [categoryToDelete, setCategoryToDelete] = useState<CategoryItem | null>(null);
+  const [isDeletingCategory, setIsDeletingCategory] = useState(false);
+
   // Real-time coupons subscription
   useEffect(() => {
     if (!isOpen) return;
     const unsub = subscribeToCoupons((realtimeCoupons) => {
       setCoupons(realtimeCoupons);
+    });
+    return () => unsub();
+  }, [isOpen]);
+
+  // Real-time categories subscription
+  useEffect(() => {
+    if (!isOpen) return;
+    const unsub = subscribeToCategories((realtimeCategories) => {
+      setCategories(realtimeCategories);
     });
     return () => unsub();
   }, [isOpen]);
@@ -235,6 +258,51 @@ export const AdminSettingsModal: React.FC<AdminSettingsModalProps> = ({
     }
   };
 
+  const handleSaveCategory = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newCategoryLabel.trim()) {
+      setErrorMessage('Por favor, digite o nome da categoria.');
+      return;
+    }
+    setSavingCategory(true);
+    setErrorMessage(null);
+    try {
+      await saveCategoryToFirestore({
+        label: newCategoryLabel.trim(),
+        icon: newCategoryIcon || '🏷️'
+      });
+      setSuccessMessage(`Categoria "${newCategoryLabel.trim()}" cadastrada com sucesso!`);
+      setNewCategoryLabel('');
+      setNewCategoryIcon('🛍️');
+      setIsCategoryFormOpen(false);
+      setTimeout(() => setSuccessMessage(null), 3000);
+    } catch (err: any) {
+      setErrorMessage(err?.message || 'Erro ao cadastrar categoria.');
+    } finally {
+      setSavingCategory(false);
+    }
+  };
+
+  const handleConfirmDeleteCategory = async () => {
+    if (!categoryToDelete) return;
+    setIsDeletingCategory(true);
+    setErrorMessage(null);
+    try {
+      await deleteCategoryFromFirestore(categoryToDelete.id);
+      setSuccessMessage(`Categoria "${categoryToDelete.label}" removida com sucesso!`);
+      setCategoryToDelete(null);
+      setTimeout(() => setSuccessMessage(null), 3000);
+    } catch (err: any) {
+      setErrorMessage(err?.message || 'Erro ao remover categoria.');
+    } finally {
+      setIsDeletingCategory(false);
+    }
+  };
+
+  const getProductCountForCategory = (catId: string) => {
+    return products.filter((p) => p.category === catId).length;
+  };
+
   const handleToggleCouponStatus = async (coupon: Coupon) => {
     try {
       await toggleCouponStatusInFirestore(coupon.id, coupon.active);
@@ -305,7 +373,7 @@ export const AdminSettingsModal: React.FC<AdminSettingsModalProps> = ({
                 Painel Administrativo Mundo da Pipa
               </h3>
               <p className="text-slate-400 text-xs font-medium">
-                Cupons de desconto e ordenação do catálogo
+                Categorias, cupons de desconto e ordenação do catálogo
               </p>
             </div>
           </div>
@@ -318,11 +386,27 @@ export const AdminSettingsModal: React.FC<AdminSettingsModalProps> = ({
         </div>
 
         {/* Navigation Tabs */}
-        <div className="bg-slate-100 border-b border-slate-200 px-4 sm:px-6 pt-2.5 flex items-center gap-2 shrink-0">
+        <div className="bg-slate-100 border-b border-slate-200 px-4 sm:px-6 pt-2.5 flex items-center gap-2 shrink-0 overflow-x-auto no-scrollbar">
+          <button
+            type="button"
+            onClick={() => { setActiveTab('categories'); setIsFormOpen(false); setIsCategoryFormOpen(false); }}
+            className={`px-3.5 py-2.5 rounded-t-2xl text-xs sm:text-sm font-black transition-all flex items-center gap-2 border-t border-x shrink-0 ${
+              activeTab === 'categories'
+                ? 'bg-white text-orange-600 border-slate-200 shadow-sm -mb-px'
+                : 'text-slate-600 hover:text-slate-900 border-transparent hover:bg-slate-200/60'
+            }`}
+          >
+            <Layers className="w-4 h-4 text-orange-500" />
+            <span>Categorias</span>
+            <span className="bg-orange-100 text-orange-800 text-[10px] font-black px-2 py-0.5 rounded-full">
+              {categories.length}
+            </span>
+          </button>
+
           <button
             type="button"
             onClick={() => { setActiveTab('coupons'); setIsFormOpen(false); }}
-            className={`px-4 py-2.5 rounded-t-2xl text-xs sm:text-sm font-black transition-all flex items-center gap-2 border-t border-x ${
+            className={`px-3.5 py-2.5 rounded-t-2xl text-xs sm:text-sm font-black transition-all flex items-center gap-2 border-t border-x shrink-0 ${
               activeTab === 'coupons'
                 ? 'bg-white text-orange-600 border-slate-200 shadow-sm -mb-px'
                 : 'text-slate-600 hover:text-slate-900 border-transparent hover:bg-slate-200/60'
@@ -338,7 +422,7 @@ export const AdminSettingsModal: React.FC<AdminSettingsModalProps> = ({
           <button
             type="button"
             onClick={() => { setActiveTab('sorting'); setIsFormOpen(false); }}
-            className={`px-4 py-2.5 rounded-t-2xl text-xs sm:text-sm font-black transition-all flex items-center gap-2 border-t border-x ${
+            className={`px-3.5 py-2.5 rounded-t-2xl text-xs sm:text-sm font-black transition-all flex items-center gap-2 border-t border-x shrink-0 ${
               activeTab === 'sorting'
                 ? 'bg-white text-orange-600 border-slate-200 shadow-sm -mb-px'
                 : 'text-slate-600 hover:text-slate-900 border-transparent hover:bg-slate-200/60'
@@ -367,6 +451,220 @@ export const AdminSettingsModal: React.FC<AdminSettingsModalProps> = ({
         {/* Tab Content Body */}
         <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-5">
           
+          {/* TAB: GERENCIADOR DE CATEGORIAS */}
+          {activeTab === 'categories' && (
+            <div className="space-y-5">
+              
+              {/* Top Action Bar */}
+              {!isCategoryFormOpen && (
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-gradient-to-r from-orange-50 via-amber-50 to-orange-50 p-4 rounded-2xl border border-orange-200">
+                  <div className="space-y-0.5">
+                    <h4 className="font-black text-slate-900 text-sm flex items-center gap-2">
+                      <Layers className="w-4 h-4 text-orange-600" />
+                      <span>Categorias do Catálogo</span>
+                    </h4>
+                    <p className="text-xs text-slate-600">
+                      Adicione ou remova categorias disponíveis na loja e no formulário de produtos.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsCategoryFormOpen(true);
+                      setNewCategoryLabel('');
+                      setNewCategoryIcon('🛍️');
+                    }}
+                    className="bg-orange-600 hover:bg-orange-500 text-white font-black text-xs px-4 py-2.5 rounded-xl shadow flex items-center justify-center gap-1.5 transition-all shrink-0"
+                  >
+                    <Plus className="w-4 h-4" />
+                    <span>Nova Categoria</span>
+                  </button>
+                </div>
+              )}
+
+              {/* Form to Add New Category */}
+              {isCategoryFormOpen && (
+                <form onSubmit={handleSaveCategory} className="bg-slate-50 border-2 border-orange-300 rounded-3xl p-4 sm:p-5 space-y-4 animate-fadeIn">
+                  <div className="flex items-center justify-between border-b border-slate-200 pb-3">
+                    <div className="flex items-center gap-2">
+                      <FolderPlus className="w-5 h-5 text-orange-600" />
+                      <h4 className="font-black text-slate-900 text-sm">
+                        Cadastrar Nova Categoria
+                      </h4>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setIsCategoryFormOpen(false)}
+                      className="text-slate-400 hover:text-slate-700 p-1"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    {/* Category Label Input */}
+                    <div className="sm:col-span-2">
+                      <label className="block text-xs font-black uppercase text-slate-700 mb-1">
+                        Nome da Categoria
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        value={newCategoryLabel}
+                        onChange={(e) => setNewCategoryLabel(e.target.value)}
+                        placeholder="Ex: Plástico e embalagens, Carretilhas..."
+                        className="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2 text-sm font-bold text-slate-900 focus:outline-none focus:border-orange-500"
+                      />
+                    </div>
+
+                    {/* Emoji / Icon Selector */}
+                    <div>
+                      <label className="block text-xs font-black uppercase text-slate-700 mb-1">
+                        Ícone / Emoji
+                      </label>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="text"
+                          value={newCategoryIcon}
+                          onChange={(e) => setNewCategoryIcon(e.target.value)}
+                          maxLength={4}
+                          className="w-16 bg-white border border-slate-300 rounded-xl px-2.5 py-2 text-center text-lg font-bold text-slate-900 focus:outline-none focus:border-orange-500"
+                        />
+                        <span className="text-[11px] text-slate-500 font-medium leading-tight">
+                          Digite ou clique abaixo
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Fast Emoji Picks */}
+                  <div>
+                    <label className="block text-[11px] font-black uppercase text-slate-500 mb-1.5">
+                      Sugestões de Ícones:
+                    </label>
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      {['🛍️', '📦', '🪁', '🧵', '🎗️', '🪵', '🎁', '🏷️', '⚡', '✂️', '🎯', '✨'].map((emoji) => (
+                        <button
+                          key={emoji}
+                          type="button"
+                          onClick={() => setNewCategoryIcon(emoji)}
+                          className={`w-9 h-9 rounded-xl border flex items-center justify-center text-base transition-all ${
+                            newCategoryIcon === emoji
+                              ? 'bg-orange-100 border-orange-500 scale-110 shadow-sm'
+                              : 'bg-white border-slate-200 hover:bg-slate-100'
+                          }`}
+                        >
+                          {emoji}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Preview Banner */}
+                  <div className="bg-white border border-slate-200 rounded-2xl p-3 flex items-center justify-between gap-3">
+                    <span className="text-xs text-slate-500 font-bold">Pré-visualização no site:</span>
+                    <span className="bg-gradient-to-r from-orange-500 to-amber-500 text-white font-black text-xs uppercase tracking-wide px-4 py-1.5 rounded-full shadow flex items-center gap-1.5">
+                      <span>{newCategoryIcon || '🏷️'}</span>
+                      <span>{newCategoryLabel.trim() || 'Nome da Categoria'}</span>
+                    </span>
+                  </div>
+
+                  <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-200">
+                    <button
+                      type="button"
+                      onClick={() => setIsCategoryFormOpen(false)}
+                      className="px-4 py-2 text-xs font-bold text-slate-700 bg-white border border-slate-200 rounded-xl hover:bg-slate-100 transition-colors"
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={savingCategory}
+                      className="px-5 py-2 text-xs font-black text-white bg-orange-600 hover:bg-orange-500 rounded-xl shadow transition-colors flex items-center gap-1.5"
+                    >
+                      {savingCategory ? (
+                        <>
+                          <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                          <span>Salvando...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Check className="w-3.5 h-3.5" />
+                          <span>Cadastrar Categoria</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </form>
+              )}
+
+              {/* LIST OF CATEGORIES */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-xs font-black text-slate-900 uppercase tracking-wider">
+                    Categorias Cadastradas ({categories.length})
+                  </h4>
+                  <span className="text-[11px] text-slate-500">
+                    Sincronizadas em tempo real com o Firestore
+                  </span>
+                </div>
+
+                {categories.length === 0 ? (
+                  <div className="text-center py-8 bg-slate-50 border border-slate-200 rounded-2xl p-6">
+                    <Layers className="w-8 h-8 text-slate-400 mx-auto mb-2" />
+                    <p className="text-sm font-bold text-slate-700">Nenhuma categoria cadastrada</p>
+                    <p className="text-xs text-slate-500 mt-1 max-w-sm mx-auto">
+                      Clique no botão "Nova Categoria" para adicionar uma nova seção ao catálogo.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {categories.map((cat) => {
+                      const prodCount = getProductCountForCategory(cat.id);
+                      return (
+                        <div
+                          key={cat.id}
+                          className="bg-white border border-slate-200 hover:border-orange-300 rounded-2xl p-3.5 flex items-center justify-between gap-3 shadow-xs transition-all"
+                        >
+                          <div className="flex items-center gap-3 min-w-0">
+                            <div className="w-11 h-11 rounded-xl bg-orange-50 border border-orange-200 flex items-center justify-center text-xl shrink-0 shadow-inner">
+                              {cat.icon || '🏷️'}
+                            </div>
+                            <div className="min-w-0">
+                              <h5 className="font-black text-sm text-slate-900 truncate">
+                                {cat.label}
+                              </h5>
+                              <div className="flex items-center gap-1.5 mt-0.5">
+                                <span className="text-[10px] text-slate-400 font-mono bg-slate-100 px-1.5 py-0.5 rounded">
+                                  {cat.id}
+                                </span>
+                                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
+                                  prodCount > 0 ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'
+                                }`}>
+                                  {prodCount} {prodCount === 1 ? 'produto' : 'produtos'}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={() => setCategoryToDelete(cat)}
+                            className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-colors border border-transparent hover:border-red-200 shrink-0"
+                            title={`Remover categoria "${cat.label}"`}
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+            </div>
+          )}
+
           {/* TAB 1: CUPONS PROMOCIONAIS */}
           {activeTab === 'coupons' && (
             <div className="space-y-5">
@@ -556,6 +854,17 @@ export const AdminSettingsModal: React.FC<AdminSettingsModalProps> = ({
                             />
                             <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
                           </div>
+
+                          <select
+                            value={categoryFilter}
+                            onChange={(e) => setCategoryFilter(e.target.value)}
+                            className="bg-slate-50 border border-slate-200 rounded-lg px-2 py-1.5 text-xs font-bold text-slate-700 focus:outline-none"
+                          >
+                            <option value="todos">Todas Categorias</option>
+                            {categories.map((c) => (
+                              <option key={c.id} value={c.id}>{c.label}</option>
+                            ))}
+                          </select>
 
                           <div className="flex items-center gap-1.5 text-xs">
                             <button
@@ -1066,6 +1375,72 @@ export const AdminSettingsModal: React.FC<AdminSettingsModalProps> = ({
                   <>
                     <Trash2 className="w-3.5 h-3.5" />
                     <span>Sim, Excluir Cupom</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Confirmation Modal for Deleting Category */}
+      {categoryToDelete && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-fadeIn">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-red-200 space-y-4">
+            <div className="flex items-center gap-3 text-red-600">
+              <div className="w-12 h-12 rounded-2xl bg-red-100 flex items-center justify-center shrink-0">
+                <Trash2 className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="text-lg font-black text-slate-900 leading-tight">Remover Categoria?</h3>
+                <p className="text-xs text-slate-500">Esta ação removerá a categoria do catálogo e dos menus.</p>
+              </div>
+            </div>
+
+            <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3.5 space-y-2">
+              <div className="flex items-center gap-2.5">
+                <span className="text-2xl">{categoryToDelete.icon || '🏷️'}</span>
+                <div>
+                  <h4 className="font-black text-slate-900 text-sm">{categoryToDelete.label}</h4>
+                  <span className="font-mono text-[10px] text-slate-400">id: {categoryToDelete.id}</span>
+                </div>
+              </div>
+
+              {getProductCountForCategory(categoryToDelete.id) > 0 ? (
+                <div className="bg-amber-50 border border-amber-200 rounded-xl p-2.5 text-[11px] text-amber-900 leading-relaxed">
+                  ⚠️ <strong>Atenção:</strong> Existem <strong>{getProductCountForCategory(categoryToDelete.id)}</strong> produtos cadastrados nesta categoria. Os produtos continuarão no catálogo, mas a categoria deixará de ser listada no menu superior.
+                </div>
+              ) : (
+                <p className="text-[11px] text-slate-500">
+                  Nenhum produto está vinculado a esta categoria atualmente.
+                </p>
+              )}
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setCategoryToDelete(null)}
+                disabled={isDeletingCategory}
+                className="px-4 py-2 text-xs font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-xl transition-colors"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDeleteCategory}
+                disabled={isDeletingCategory}
+                className="px-4 py-2 text-xs font-black text-white bg-red-600 hover:bg-red-700 rounded-xl shadow-lg transition-colors flex items-center gap-1.5"
+              >
+                {isDeletingCategory ? (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    <span>Removendo...</span>
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Sim, Remover Categoria</span>
                   </>
                 )}
               </button>
