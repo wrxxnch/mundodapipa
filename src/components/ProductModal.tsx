@@ -98,6 +98,7 @@ export const ProductModal: React.FC<ProductModalProps> = ({
                 <FastImage
                   src={activeImage}
                   alt={product.name}
+                  updatedAt={product.updatedAt || product.createdAt}
                   className="max-h-60 w-full object-contain rounded-xl shadow-md transition-all duration-300"
                 />
               ) : videoUrl ? (
@@ -126,7 +127,12 @@ export const ProductModal: React.FC<ProductModalProps> = ({
                         : 'border-slate-300 opacity-60 hover:opacity-100'
                     }`}
                   >
-                    <FastImage src={img} alt="" className="w-full h-full object-cover" />
+                    <FastImage 
+                      src={img} 
+                      alt="" 
+                      updatedAt={product.updatedAt || product.createdAt}
+                      className="w-full h-full object-cover" 
+                    />
                   </button>
                 ))}
               </div>

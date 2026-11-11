@@ -34,7 +34,8 @@ import {
   UserProfile,
   CatalogSettings,
   getLocalCatalogSettings,
-  subscribeToCatalogSettings
+  subscribeToCatalogSettings,
+  isAdminEmail
 } from './lib/firebase';
 import { ShoppingBag } from 'lucide-react';
 
@@ -104,16 +105,16 @@ export default function App() {
       return;
     }
 
-    const adminEmail = user.email || 'jeanpierreowner@gmail.com';
+    const currentAdminEmail = user.email || 'jeanpierreowner@gmail.com';
     const inputEmail = window.prompt(
-      `ATENÇÃO: Ação irreversível!\n\nPara confirmar a exclusão de TODOS os produtos do catálogo, digite o e-mail do administrador (${adminEmail}):`
+      `ATENÇÃO: Ação irreversível!\n\nPara confirmar a exclusão de TODOS os produtos do catálogo, digite o e-mail do administrador (${currentAdminEmail}):`
     );
 
     if (inputEmail === null) {
       return; // Canceled by user
     }
 
-    if (inputEmail.trim().toLowerCase() !== adminEmail.trim().toLowerCase()) {
+    if (!isAdminEmail(inputEmail.trim())) {
       alert('E-mail incorreto. A exclusão de todo o catálogo foi CANCELADA por segurança.');
       return;
     }
@@ -135,24 +136,8 @@ export default function App() {
       setProducts(realtimeProducts);
     });
 
-    // Re-check Firestore whenever user returns to or focuses the tab/app
-    const handleSyncOnFocus = () => {
-      if (document.visibilityState === 'visible') {
-        getProductsFromFirestore().then((items) => {
-          if (items && items.length > 0) {
-            setProducts(items);
-          }
-        }).catch(() => {});
-      }
-    };
-
-    window.addEventListener('focus', handleSyncOnFocus);
-    document.addEventListener('visibilitychange', handleSyncOnFocus);
-
     return () => {
       unsubscribe();
-      window.removeEventListener('focus', handleSyncOnFocus);
-      document.removeEventListener('visibilitychange', handleSyncOnFocus);
     };
   }, []);
 

@@ -1,49 +1,16 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Star, MessageSquareQuote, CheckCircle2, CornerDownRight } from 'lucide-react';
+import { subscribeToReviews, CustomerReviewItem } from '../lib/firebase';
 
 export const ReviewsSection: React.FC = () => {
-  const reviews = [
-    {
-      id: 1,
-      author: 'theus878',
-      variation: 'Variação: 2P, Emborrachada',
-      rating: 5,
-      date: '2026-05-24',
-      comment: 'linha lisa emborrachada de extrema qualidade, recomendo. comprarei mais vezes',
-      badges: ['Custo-benefício: perfeito', 'Parecido c/ anúncio: sim', 'Segurança: ótima'],
-      sellerReply: 'Muito obrigado pela preferência 😃 Deus abençoe 🙏🏻'
-    },
-    {
-      id: 2,
-      author: 'u45p9ldsxm',
-      variation: 'Variação: 2P, Emborrachada',
-      rating: 5,
-      date: '2026-07-09',
-      comment: 'sim linha lisinha de qualidade',
-      badges: ['Custo-benefício: excelente', 'Parecido c/ anúncio: sim', 'Segurança: bom'],
-      sellerReply: 'Muito obrigado pela preferência 😃'
-    },
-    {
-      id: 3,
-      author: 'ivanete1212',
-      variation: 'Variação: 2P, Meio termo',
-      rating: 5,
-      date: '2026-06-30',
-      comment: 'Excelente produto! Chegou no prazo, bem embalado e pronto para uso.',
-      badges: ['Entrega rápida', 'Qualidade Garantida'],
-      sellerReply: 'Muito obrigado pela preferência 😃'
-    },
-    {
-      id: 4,
-      author: 'maianaigor',
-      variation: 'Variação: 2P, Emborrachada',
-      rating: 5,
-      date: '2026-05-18',
-      comment: 'Linha muito macia, resistente e de fácil manuseio. Recomendo muito a loja Mundo da Pipa!',
-      badges: ['Qualidade Premium', 'Super Recomendo'],
-      sellerReply: 'Muito obrigado pela preferência 😃'
-    }
-  ];
+  const [reviews, setReviews] = useState<CustomerReviewItem[]>([]);
+
+  useEffect(() => {
+    const unsub = subscribeToReviews((liveReviews) => {
+      setReviews(liveReviews);
+    });
+    return () => unsub();
+  }, []);
 
   return (
     <section className="py-12 my-8 border-t border-slate-200">

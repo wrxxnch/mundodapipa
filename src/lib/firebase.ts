@@ -40,6 +40,17 @@ export { deleteField };
 
 // Quota and connection state management
 export let isFirestoreQuotaExhausted = false;
+export const FIRESTORE_UPGRADE_URL = `https://console.firebase.google.com/project/${firebaseConfig.projectId}/firestore/databases/${firebaseConfig.firestoreDatabaseId || 'ai-studio-mundodapipa-66c6efda-c9a5-44bd-992b-f034f302f161'}/data?openUpgradeDialog=true`;
+
+const quotaListeners: ((isExhausted: boolean) => void)[] = [];
+export const subscribeToQuotaState = (fn: (isExhausted: boolean) => void) => {
+  quotaListeners.push(fn);
+  fn(isFirestoreQuotaExhausted);
+  return () => {
+    const idx = quotaListeners.indexOf(fn);
+    if (idx >= 0) quotaListeners.splice(idx, 1);
+  };
+};
 
 export const checkIsQuotaError = (err: any): boolean => {
   if (!err) return false;
@@ -49,13 +60,19 @@ export const checkIsQuotaError = (err: any): boolean => {
     code === 'resource-exhausted' ||
     msg.includes('resource-exhausted') ||
     msg.includes('Quota limit exceeded') ||
-    msg.includes('Free daily write units')
+    msg.includes('Quota exceeded') ||
+    msg.includes('Free daily read units') ||
+    msg.includes('Free daily write units') ||
+    msg.includes('quota')
   );
 };
 
 export const markQuotaExhausted = (err?: any) => {
   if (err && checkIsQuotaError(err)) {
     isFirestoreQuotaExhausted = true;
+    quotaListeners.forEach(fn => {
+      try { fn(true); } catch {}
+    });
   }
 };
 
@@ -123,10 +140,16 @@ export interface UserProfile {
   role: 'admin' | 'customer';
 }
 
-const ADMIN_EMAILS = [
+export const ADMIN_EMAILS = [
   'admin@mundodapipa.com.br',
-  'jeanpierreowner@gmail.com'
+  'jeanpierreowner@gmail.com',
+  'diegao.sock.bh1984@gmail.com'
 ];
+
+export const isAdminEmail = (email?: string | null): boolean => {
+  if (!email) return false;
+  return ADMIN_EMAILS.includes(email.trim().toLowerCase());
+};
 
 const LOCAL_PRODUCTS_CACHE_KEY = 'mundo_pipa_products_cache';
 
@@ -138,9 +161,9 @@ const handleQuotaExhausted = (err: any) => {
 const getLocalProducts = (): Product[] => {
   try {
     const raw = localStorage.getItem(LOCAL_PRODUCTS_CACHE_KEY);
-    if (raw) {
+    if (raw !== null) {
       const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed) && parsed.length > 0) {
+      if (Array.isArray(parsed)) {
         return parsed;
       }
     }
@@ -202,6 +225,36 @@ export const cleanFirestoreData = (obj: any): any => {
   return obj;
 };
 
+/**
+ * Ensures image URLs are always loaded directly from Firebase / remote host
+ * and never served from stale browser cache or browser history.
+ */
+export function getFreshImageUrl(url?: string | null, updatedAt?: string | number): string {
+  if (!url) return '';
+  const trimmed = url.trim();
+  if (!trimmed) return '';
+
+  // Data URLs, Blobs and local bundled assets do not use HTTP browser caching
+  if (
+    trimmed.startsWith('data:') || 
+    trimmed.startsWith('blob:') || 
+    trimmed.startsWith('/src/') || 
+    (trimmed.startsWith('/') && !trimmed.startsWith('//'))
+  ) {
+    return trimmed;
+  }
+
+  try {
+    // Strip any old cache buster query parameter to prevent accumulation
+    const cleanUrl = trimmed.replace(/([?&])(_fb|_t|t|v)=[^&]*(&|$)/g, '$1').replace(/[?&]$/, '');
+    const separator = cleanUrl.includes('?') ? '&' : '?';
+    const version = updatedAt ? encodeURIComponent(String(updatedAt)) : Date.now();
+    return `${cleanUrl}${separator}_fb=${version}`;
+  } catch {
+    return trimmed;
+  }
+}
+
 export const parseFirestoreProduct = (id: string, data: any): Product => {
   const priceNum = Number(data.price) || 0;
   const origPriceNum = data.originalPrice != null && Number(data.originalPrice) > 0 ? Number(data.originalPrice) : undefined;
@@ -223,14 +276,23 @@ export const parseFirestoreProduct = (id: string, data: any): Product => {
     }
   }
 
+  const freshImage = getFreshImageUrl(
+    data.image || 'https://images.unsplash.com/photo-1534447677768-be436bb09401?auto=format&fit=crop&w=600&q=80',
+    data.updatedAt || createdAtStr
+  );
+
+  const freshImages = Array.isArray(data.images) && data.images.length > 0 
+    ? data.images.map((img: string) => getFreshImageUrl(img, data.updatedAt || createdAtStr))
+    : (data.image ? [freshImage] : undefined);
+
   return {
     id,
     name: data.name || '',
     category: data.category || 'pipas',
     price: priceNum,
     originalPrice: origPriceNum,
-    image: data.image || 'https://images.unsplash.com/photo-1534447677768-be436bb09401?auto=format&fit=crop&w=600&q=80',
-    images: Array.isArray(data.images) && data.images.length > 0 ? data.images : (data.image ? [data.image] : undefined),
+    image: freshImage,
+    images: freshImages,
     videoUrl: data.videoUrl || undefined,
     videos: Array.isArray(data.videos) ? data.videos : undefined,
     description: data.description || '',
@@ -332,28 +394,7 @@ export const subscribeToProducts = (
 
   // 1. Immediately provide cached products
   const cached = getLocalProducts();
-  if (cached && cached.length > 0) {
-    onData(cached);
-  }
-
-  // 2. Fetch fresh live data from Firestore
-  getProductsFromFirestore()
-    .then((liveProducts) => {
-      if (liveProducts && liveProducts.length > 0) {
-        setLocalProducts(liveProducts);
-        onData(liveProducts);
-      } else if (!cached || cached.length === 0) {
-        initializeProductsSeed().then(() => {
-          getProductsFromFirestore().then(p => {
-            if (p.length > 0) {
-              setLocalProducts(p);
-              onData(p);
-            }
-          });
-        }).catch(() => {});
-      }
-    })
-    .catch(() => {});
+  onData(cached);
 
   let unsubscribeFirestore = () => {};
 
@@ -375,19 +416,17 @@ export const subscribeToProducts = (
         onData(productsList);
       },
       (error) => {
-        try {
-          handleFirestoreError(error, OperationType.GET, 'products');
-        } catch (wrappedErr: any) {
-          if (onError) onError(wrappedErr);
+        markQuotaExhausted(error);
+        console.warn('Products Firestore snapshot notice (using local cache):', error?.message || error);
+        onData(getLocalProducts());
+        if (onError && !checkIsQuotaError(error)) {
+          onError(error);
         }
       }
     );
   } catch (error) {
-    try {
-      handleFirestoreError(error, OperationType.GET, 'products');
-    } catch (wrappedErr: any) {
-      if (onError) onError(wrappedErr);
-    }
+    markQuotaExhausted(error);
+    onData(getLocalProducts());
   }
 
   return () => {
@@ -567,7 +606,12 @@ const notifyAuthListeners = (user: UserProfile | null) => {
 const getStoredSession = (): UserProfile | null => {
   try {
     const data = localStorage.getItem(SESSION_KEY);
-    return data ? JSON.parse(data) : null;
+    if (!data) return null;
+    const user: UserProfile = JSON.parse(data);
+    if (user && user.email && isAdminEmail(user.email)) {
+      user.role = 'admin';
+    }
+    return user;
   } catch {
     return null;
   }
@@ -576,6 +620,9 @@ const getStoredSession = (): UserProfile | null => {
 const setStoredSession = (user: UserProfile | null) => {
   try {
     if (user) {
+      if (user.email && isAdminEmail(user.email)) {
+        user.role = 'admin';
+      }
       localStorage.setItem(SESSION_KEY, JSON.stringify(user));
     } else {
       localStorage.removeItem(SESSION_KEY);
@@ -586,7 +633,7 @@ const setStoredSession = (user: UserProfile | null) => {
 
 // Auth helpers
 export const registerUser = async (email: string, pass: string, name: string) => {
-  const isEmailAdmin = ADMIN_EMAILS.includes(email.toLowerCase());
+  const isEmailAdmin = isAdminEmail(email);
   const finalRole: 'admin' | 'customer' = isEmailAdmin ? 'admin' : 'customer';
 
   const credential = await createUserWithEmailAndPassword(auth, email, pass);
@@ -612,7 +659,8 @@ export const registerUser = async (email: string, pass: string, name: string) =>
 
 export const loginUser = async (email: string, pass: string) => {
   const credential = await signInWithEmailAndPassword(auth, email, pass);
-  const isEmailAdmin = ADMIN_EMAILS.includes((credential.user.email || email).toLowerCase());
+  const resolvedEmail = credential.user.email || email;
+  const isEmailAdmin = isAdminEmail(resolvedEmail);
   let userRole: 'admin' | 'customer' = isEmailAdmin ? 'admin' : 'customer';
   let userName = credential.user.displayName || (userRole === 'admin' ? 'Administrador' : 'Cliente');
 
@@ -621,16 +669,16 @@ export const loginUser = async (email: string, pass: string) => {
     const docSnap = await getDoc(userDocRef);
     if (docSnap.exists()) {
       const data = docSnap.data();
-      if (data.role) userRole = data.role;
+      if (data.role && !isEmailAdmin) userRole = data.role;
       if (data.name) userName = data.name;
     }
   } catch {}
 
   const userProfile: UserProfile = {
     uid: credential.user.uid,
-    email: credential.user.email || email,
+    email: resolvedEmail,
     name: userName,
-    role: userRole
+    role: isEmailAdmin ? 'admin' : userRole
   };
 
   try {
@@ -646,16 +694,16 @@ export const loginWithGoogle = async () => {
   const provider = new GoogleAuthProvider();
   const credential = await signInWithPopup(auth, provider);
   const email = credential.user.email || '';
-  const isEmailAdmin = ADMIN_EMAILS.includes(email.toLowerCase());
+  const isEmailAdmin = isAdminEmail(email);
   let finalRole: 'admin' | 'customer' = isEmailAdmin ? 'admin' : 'customer';
-  let userName = credential.user.displayName || 'Cliente Google';
+  let userName = credential.user.displayName || (isEmailAdmin ? 'Administrador' : 'Cliente Google');
 
   try {
     const userDocRef = doc(db, 'users', credential.user.uid);
     const docSnap = await getDoc(userDocRef);
     if (docSnap.exists()) {
       const data = docSnap.data();
-      if (data.role) finalRole = data.role;
+      if (data.role && !isEmailAdmin) finalRole = data.role;
       if (data.name) userName = data.name;
     }
   } catch {}
@@ -664,7 +712,7 @@ export const loginWithGoogle = async () => {
     uid: credential.user.uid,
     email: email,
     name: userName,
-    role: finalRole
+    role: isEmailAdmin ? 'admin' : finalRole
   };
 
   try {
@@ -695,7 +743,7 @@ export const listenAuthState = (onChange: (user: UserProfile | null) => void) =>
   const unsubscribeFirebase = onAuthStateChanged(auth, async (firebaseUser: FirebaseUser | null) => {
     if (firebaseUser) {
       const email = firebaseUser.email || '';
-      let isEmailAdmin = ADMIN_EMAILS.includes(email.toLowerCase());
+      const isEmailAdmin = isAdminEmail(email);
       let role: 'admin' | 'customer' = isEmailAdmin ? 'admin' : 'customer';
       let name = firebaseUser.displayName || (role === 'admin' ? 'Administrador' : 'Cliente');
 
@@ -704,7 +752,7 @@ export const listenAuthState = (onChange: (user: UserProfile | null) => void) =>
         const docSnap = await getDoc(userDocRef);
         if (docSnap.exists()) {
           const data = docSnap.data();
-          if (data.role) role = data.role;
+          if (data.role && !isEmailAdmin) role = data.role;
           if (data.name) name = data.name;
         }
       } catch {}
@@ -713,7 +761,7 @@ export const listenAuthState = (onChange: (user: UserProfile | null) => void) =>
         uid: firebaseUser.uid,
         email: email,
         name: name,
-        role: role
+        role: isEmailAdmin ? 'admin' : role
       };
 
       setStoredSession(userProfile);
@@ -822,49 +870,102 @@ export const subscribeToStoryContent = (onData: (content: StoryContent) => void)
 };
 
 // =========================================================
-// Community & Public Posts System (Pure Firebase Firestore)
+// Community & Public Posts System (Firebase Firestore + Cache)
 // =========================================================
 
-// Clean any legacy local storage posts key
-try {
-  if (typeof window !== 'undefined' && window.localStorage) {
-    localStorage.removeItem('mundo_pipa_posts_cache');
+export const DEFAULT_POSTS: Post[] = [
+  {
+    id: 'post-festival-2026',
+    title: 'Grande Festival Mundo da Pipa 2026! 🪁🔥',
+    content: 'Preparem as carretilhas e as armações! No próximo domingo teremos o maior encontro de combate amador e revoada livre com sorteio de kits completos, carretilhas artesanais e pacotes de raias 40x40. Traga sua família para colorir o céu com a gente!',
+    author: 'Jean Pierre (Mundo da Pipa)',
+    authorId: 'admin',
+    imageUrl: 'https://images.unsplash.com/photo-1534447677768-be436bb09401?auto=format&fit=crop&w=1200&q=80',
+    videoUrl: 'https://www.youtube.com/watch?v=k-V39b-e8pU',
+    createdAt: new Date(Date.now() - 1000 * 60 * 60 * 24 * 2).toISOString()
+  },
+  {
+    id: 'post-dica-estirante',
+    title: 'Dica Técnica: O segredo do estirante perfeito para ventos fortes e fracos',
+    content: 'Muitos pipeiros erram no cabresto: para vento fraco, deixe o estirante superior 1 dedo mais curto para dar tração máxima à armação de bambu. Já para vento forte, curve levemente a vareta horizontal e aumente o estirante inferior para dar firmeza e evitar que a pipa desbie.',
+    author: 'Equipe Técnica Mundo da Pipa',
+    authorId: 'admin',
+    imageUrl: 'https://images.unsplash.com/photo-1508615039623-a25605d2b022?auto=format&fit=crop&w=1200&q=80',
+    videoUrl: 'https://www.youtube.com/watch?v=0hB3u148J8A',
+    createdAt: new Date(Date.now() - 1000 * 60 * 60 * 24 * 5).toISOString()
+  },
+  {
+    id: 'post-fio10-adamantium',
+    title: 'Linha Fio 10 3000 Jardas 2 Passadas (Adamantium) já em estoque!',
+    content: 'Nossa campeã de vendas na Shopee! Linha 100% algodão com acabamento emborrachado liso, toque suave que não corta a mão na largada e altíssima resistência na disputa aérea. Disponível para envio imediato com entrega rápida.',
+    author: 'Mundo da Pipa Shopee Oficial',
+    authorId: 'admin',
+    imageUrl: 'https://images.unsplash.com/photo-1513151233558-d860c5398176?auto=format&fit=crop&w=1200&q=80',
+    createdAt: new Date(Date.now() - 1000 * 60 * 60 * 24 * 8).toISOString()
   }
-} catch {}
+];
+
+const LOCAL_POSTS_CACHE_KEY = 'mundo_pipa_posts_cache_v2';
+
+export const getLocalPosts = (): Post[] => {
+  try {
+    const raw = localStorage.getItem(LOCAL_POSTS_CACHE_KEY);
+    if (raw !== null) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed;
+      }
+    }
+  } catch {}
+  return DEFAULT_POSTS;
+};
+
+const postListeners: ((posts: Post[]) => void)[] = [];
+export const setLocalPosts = (posts: Post[]) => {
+  try {
+    localStorage.setItem(LOCAL_POSTS_CACHE_KEY, JSON.stringify(posts));
+  } catch {}
+  postListeners.forEach(fn => {
+    try { fn(posts); } catch {}
+  });
+};
 
 /**
- * Fetch all posts directly from Firebase Firestore
+ * Fetch all posts from Firebase Firestore or fallback to local cache
  */
 export const getPostsFromFirestore = async (): Promise<Post[]> => {
   const path = 'posts';
   try {
     const postsRef = collection(db, path);
     const snapshot = await getDocs(postsRef);
-    const postsList: Post[] = [];
-    snapshot.forEach((docSnap) => {
-      const data = docSnap.data();
-      postsList.push({
-        id: docSnap.id,
-        title: data.title || '',
-        content: data.content || '',
-        author: data.author || 'Mundo da Pipa',
-        authorId: data.authorId || '',
-        imageUrl: data.imageUrl || '',
-        videoUrl: data.videoUrl || '',
-        createdAt: data.createdAt || new Date().toISOString()
+    if (!snapshot.empty) {
+      const postsList: Post[] = [];
+      snapshot.forEach((docSnap) => {
+        const data = docSnap.data();
+        postsList.push({
+          id: docSnap.id,
+          title: data.title || '',
+          content: data.content || '',
+          author: data.author || 'Mundo da Pipa',
+          authorId: data.authorId || '',
+          imageUrl: getFreshImageUrl(data.imageUrl, data.updatedAt || data.createdAt),
+          videoUrl: data.videoUrl || '',
+          createdAt: data.createdAt || new Date().toISOString()
+        });
       });
-    });
-    // Order latest first
-    postsList.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-    return postsList;
+      postsList.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+      setLocalPosts(postsList);
+      return postsList;
+    }
   } catch (error) {
-    handleFirestoreError(error, OperationType.GET, path);
-    return [];
+    markQuotaExhausted(error);
+    console.warn('Posts Firestore read notice (using resilient local cache):', error);
   }
+  return getLocalPosts();
 };
 
 /**
- * Add a new post directly to Firebase Firestore
+ * Add a new post to Firebase Firestore and update local storage immediately
  */
 export const addPostToFirestore = async (newPost: Partial<Post>): Promise<string> => {
   const id = newPost.id || `post_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
@@ -873,99 +974,136 @@ export const addPostToFirestore = async (newPost: Partial<Post>): Promise<string
     title: newPost.title?.trim() || '',
     content: newPost.content?.trim() || '',
     author: newPost.author?.trim() || 'Mundo da Pipa',
-    authorId: newPost.authorId || auth.currentUser?.uid || '',
+    authorId: newPost.authorId || auth.currentUser?.uid || 'admin',
     imageUrl: newPost.imageUrl?.trim() || '',
     videoUrl: newPost.videoUrl?.trim() || '',
     createdAt: newPost.createdAt || new Date().toISOString()
   };
 
+  // 1. Immediately update local storage and notify all subscribers
+  const current = getLocalPosts();
+  const updated = [postData, ...current.filter(p => p.id !== id)];
+  setLocalPosts(updated);
+
+  // 2. Direct Firestore persistence
   const path = `posts/${id}`;
   try {
     const postRef = doc(db, 'posts', id);
     await setDoc(postRef, cleanFirestoreData(postData), { merge: true });
     return id;
   } catch (error) {
-    handleFirestoreError(error, OperationType.CREATE, path);
+    markQuotaExhausted(error);
+    console.warn('Could not sync post to Firestore cloud immediately, preserved locally:', error);
     return id;
   }
 };
 
 /**
- * Update an existing post directly in Firebase Firestore
+ * Update an existing post in Firebase Firestore and local cache
  */
 export const updatePostInFirestore = async (postId: string, updates: Partial<Post>): Promise<void> => {
+  // Update local cache immediately
+  const current = getLocalPosts();
+  const updated = current.map(p => p.id === postId ? { ...p, ...updates } : p);
+  setLocalPosts(updated);
+
   const path = `posts/${postId}`;
   try {
     const postRef = doc(db, 'posts', postId);
     await updateDoc(postRef, cleanFirestoreData(updates));
   } catch (error) {
-    handleFirestoreError(error, OperationType.UPDATE, path);
+    markQuotaExhausted(error);
+    console.warn('Could not update post in Firestore cloud, updated locally:', error);
   }
 };
 
 /**
- * Delete a post directly from Firebase Firestore
+ * Delete a post from Firebase Firestore and local cache
  */
 export const deletePostFromFirestore = async (postId: string): Promise<void> => {
+  // Update local cache immediately
+  const current = getLocalPosts();
+  const filtered = current.filter(p => p.id !== postId);
+  setLocalPosts(filtered);
+
   const path = `posts/${postId}`;
   try {
     const postRef = doc(db, 'posts', postId);
     await deleteDoc(postRef);
   } catch (error) {
-    handleFirestoreError(error, OperationType.DELETE, path);
+    markQuotaExhausted(error);
+    console.warn('Could not delete post from Firestore cloud, removed locally:', error);
   }
 };
 
 /**
- * Subscribe to posts in real-time from Firebase Firestore without any local storage
+ * Subscribe to posts in real-time from Firebase Firestore with instant local cache delivery
  */
 export const subscribeToPosts = (
   onData: (posts: Post[]) => void,
   onError?: (err: Error) => void
 ) => {
+  postListeners.push(onData);
+
+  // 1. Immediately deliver local/cached posts so user sees content instantly
+  const cached = getLocalPosts();
+  onData(cached);
+
   const path = 'posts';
+  let unsubscribeFirestore = () => {};
+
   try {
     const postsRef = collection(db, path);
-    const unsubscribe = onSnapshot(
+    unsubscribeFirestore = onSnapshot(
       postsRef,
       (snapshot) => {
-        const postsList: Post[] = [];
-        snapshot.forEach((docSnap) => {
-          const data = docSnap.data();
-          postsList.push({
-            id: docSnap.id,
-            title: data.title || '',
-            content: data.content || '',
-            author: data.author || 'Mundo da Pipa',
-            authorId: data.authorId || '',
-            imageUrl: data.imageUrl || '',
-            videoUrl: data.videoUrl || '',
-            createdAt: data.createdAt || new Date().toISOString()
+        if (!snapshot.empty) {
+          const postsList: Post[] = [];
+          snapshot.forEach((docSnap) => {
+            const data = docSnap.data();
+            postsList.push({
+              id: docSnap.id,
+              title: data.title || '',
+              content: data.content || '',
+              author: data.author || 'Mundo da Pipa',
+              authorId: data.authorId || '',
+              imageUrl: getFreshImageUrl(data.imageUrl, data.updatedAt || data.createdAt),
+              videoUrl: data.videoUrl || '',
+              createdAt: data.createdAt || new Date().toISOString()
+            });
           });
-        });
 
-        // Sort latest first
-        postsList.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-        onData(postsList);
+          // Sort latest first
+          postsList.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+          setLocalPosts(postsList);
+          onData(postsList);
+        } else {
+          // If collection is empty, ensure cached default posts are displayed
+          onData(getLocalPosts());
+        }
       },
       (error) => {
-        try {
-          handleFirestoreError(error, OperationType.GET, path);
-        } catch (wrappedErr: any) {
-          if (onError) onError(wrappedErr);
+        markQuotaExhausted(error);
+        console.warn('Posts Firestore subscription notice (using resilient local cache):', error?.message || error);
+        // Do not crash UI or leave screen blank; keep serving cached posts
+        onData(getLocalPosts());
+        if (onError && !checkIsQuotaError(error)) {
+          onError(error);
         }
       }
     );
-
-    return unsubscribe;
   } catch (error) {
-    try {
-      handleFirestoreError(error, OperationType.GET, path);
-    } catch (wrappedErr: any) {
-      if (onError) onError(wrappedErr);
-    }
-    return () => {};
+    markQuotaExhausted(error);
+    onData(getLocalPosts());
   }
+
+  return () => {
+    const idx = postListeners.indexOf(onData);
+    if (idx >= 0) postListeners.splice(idx, 1);
+    try {
+      unsubscribeFirestore();
+    } catch {}
+  };
 };
 
 /**
@@ -1427,4 +1565,118 @@ export const deleteCategoryFromFirestore = async (categoryId: string): Promise<v
     console.warn('Could not delete category from Firestore, removed locally:', error);
   }
 };
+
+// ==========================================
+// CUSTOMER REVIEWS & DEPOIMENTOS SYSTEM
+// ==========================================
+
+export interface CustomerReviewItem {
+  id: string | number;
+  author: string;
+  variation: string;
+  rating: number;
+  date: string;
+  comment: string;
+  badges: string[];
+  sellerReply?: string;
+}
+
+export const DEFAULT_CUSTOMER_REVIEWS: CustomerReviewItem[] = [
+  {
+    id: 'rev-theus878',
+    author: 'theus878',
+    variation: 'Variação: 2P, Emborrachada',
+    rating: 5,
+    date: '2026-05-24',
+    comment: 'linha lisa emborrachada de extrema qualidade, recomendo. comprarei mais vezes',
+    badges: ['Custo-benefício: perfeito', 'Parecido c/ anúncio: sim', 'Segurança: ótima'],
+    sellerReply: 'Muito obrigado pela preferência 😃 Deus abençoe 🙏🏻'
+  },
+  {
+    id: 'rev-u45p9ldsxm',
+    author: 'u45p9ldsxm',
+    variation: 'Variação: 2P, Emborrachada',
+    rating: 5,
+    date: '2026-07-09',
+    comment: 'sim linha lisinha de qualidade',
+    badges: ['Custo-benefício: excelente', 'Parecido c/ anúncio: sim', 'Segurança: bom'],
+    sellerReply: 'Muito obrigado pela preferência 😃'
+  },
+  {
+    id: 'rev-ivanete1212',
+    author: 'ivanete1212',
+    variation: 'Variação: 2P, Meio termo',
+    rating: 5,
+    date: '2026-06-30',
+    comment: 'Excelente produto! Chegou no prazo, bem embalado e pronto para uso.',
+    badges: ['Entrega rápida', 'Qualidade Garantida'],
+    sellerReply: 'Muito obrigado pela preferência 😃'
+  },
+  {
+    id: 'rev-maianaigor',
+    author: 'maianaigor',
+    variation: 'Variação: 2P, Emborrachada',
+    rating: 5,
+    date: '2026-05-18',
+    comment: 'Linha muito macia, resistente e de fácil manuseio. Recomendo muito a loja Mundo da Pipa!',
+    badges: ['Qualidade Premium', 'Super Recomendo'],
+    sellerReply: 'Muito obrigado pela preferência 😃'
+  }
+];
+
+const LOCAL_REVIEWS_KEY = 'mundo_pipa_customer_reviews';
+
+export const getLocalReviews = (): CustomerReviewItem[] => {
+  try {
+    const raw = localStorage.getItem(LOCAL_REVIEWS_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+    }
+  } catch {}
+  return DEFAULT_CUSTOMER_REVIEWS;
+};
+
+export const setLocalReviews = (reviews: CustomerReviewItem[]) => {
+  try {
+    localStorage.setItem(LOCAL_REVIEWS_KEY, JSON.stringify(reviews));
+  } catch {}
+};
+
+export const subscribeToReviews = (onData: (reviews: CustomerReviewItem[]) => void) => {
+  onData(getLocalReviews());
+
+  try {
+    const reviewsCol = collection(db, 'reviews');
+    const unsubscribe = onSnapshot(reviewsCol, (snapshot) => {
+      if (!snapshot.empty) {
+        const loaded: CustomerReviewItem[] = [];
+        snapshot.forEach((docSnap) => {
+          const data = docSnap.data();
+          loaded.push({
+            id: docSnap.id,
+            author: data.author || 'Cliente',
+            variation: data.variation || 'Produto Mundo da Pipa',
+            rating: Number(data.rating) || 5,
+            date: data.date || new Date().toISOString().split('T')[0],
+            comment: data.comment || '',
+            badges: Array.isArray(data.badges) ? data.badges : [],
+            sellerReply: data.sellerReply
+          });
+        });
+        setLocalReviews(loaded);
+        onData(loaded);
+      } else {
+        onData(getLocalReviews());
+      }
+    }, (error) => {
+      markQuotaExhausted(error);
+      onData(getLocalReviews());
+    });
+    return unsubscribe;
+  } catch {
+    return () => {};
+  }
+};
+
 

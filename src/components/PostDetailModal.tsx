@@ -3,6 +3,7 @@ import { X, Calendar, User, Trash2, Share2, MessageCircle, ExternalLink, Sparkle
 import { Post } from '../types';
 import { UserProfile } from '../lib/firebase';
 import { SmartVideoPlayer } from './SmartVideoPlayer';
+import { FastImage } from './FastImage';
 
 interface PostDetailModalProps {
   post: Post | null;
@@ -100,11 +101,11 @@ export const PostDetailModal: React.FC<PostDetailModalProps> = ({
           {/* Photo / Image if present */}
           {post.imageUrl && (
             <div className="w-full rounded-2xl overflow-hidden bg-slate-100 border border-slate-200 shadow-sm max-h-[460px] flex items-center justify-center">
-              <img
+              <FastImage
                 src={post.imageUrl}
                 alt={post.title || 'Foto do post'}
+                updatedAt={post.createdAt}
                 className="w-full h-auto max-h-[460px] object-contain rounded-2xl"
-                referrerPolicy="no-referrer"
               />
             </div>
           )}

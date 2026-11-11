@@ -922,8 +922,10 @@ export const AdminSettingsModal: React.FC<AdminSettingsModalProps> = ({
                                   </div>
 
                                   <img
+                                    key={p.image}
                                     src={p.image}
                                     alt={p.name}
+                                    loading="eager"
                                     className="w-10 h-10 object-cover rounded-lg border border-slate-200 bg-white shrink-0"
                                     referrerPolicy="no-referrer"
                                   />
@@ -1308,7 +1310,7 @@ export const AdminSettingsModal: React.FC<AdminSettingsModalProps> = ({
 
         {/* Modal Bottom Bar */}
         <div className="bg-slate-50 px-6 py-3 border-t border-slate-200 flex items-center justify-between text-xs text-slate-500 shrink-0">
-          <span>Administrador: <strong>{userEmail || 'jeanpierreowner@gmail.com'}</strong></span>
+          <span>Administrador conectado: <strong>{userEmail || 'Administrador Mundo da Pipa'}</strong></span>
           <button
             type="button"
             onClick={onClose}

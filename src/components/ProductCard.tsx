@@ -107,6 +107,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
         <FastImage
           src={product.image}
           alt={product.name}
+          updatedAt={product.updatedAt || product.createdAt}
           className="w-full h-full object-cover rounded-xl group-hover:scale-105 transition-transform duration-500"
         />
 

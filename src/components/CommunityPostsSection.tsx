@@ -18,9 +18,13 @@ import {
   subscribeToPosts, 
   deletePostFromFirestore, 
   getPostsFromFirestore,
-  UserProfile 
+  UserProfile,
+  subscribeToQuotaState,
+  FIRESTORE_UPGRADE_URL,
+  isFirestoreQuotaExhausted
 } from '../lib/firebase';
 import { SmartVideoPlayer } from './SmartVideoPlayer';
+import { FastImage } from './FastImage';
 import { AdminPostModal } from './AdminPostModal';
 import { PostDetailModal } from './PostDetailModal';
 
@@ -30,15 +34,23 @@ interface CommunityPostsSectionProps {
 
 export const CommunityPostsSection: React.FC<CommunityPostsSectionProps> = ({ user }) => {
   const [posts, setPosts] = useState<Post[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedPost, setSelectedPost] = useState<Post | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [errorNotice, setErrorNotice] = useState<string | null>(null);
+  const [quotaExhausted, setQuotaExhausted] = useState(isFirestoreQuotaExhausted);
+
+  // Subscribe to quota state
+  useEffect(() => {
+    const unsub = subscribeToQuotaState((exhausted) => {
+      setQuotaExhausted(exhausted);
+    });
+    return () => unsub();
+  }, []);
 
   // Subscribe directly to Firebase Firestore in real-time
   useEffect(() => {
-    setLoading(true);
     const unsubscribe = subscribeToPosts(
       (realtimePosts) => {
         setPosts(realtimePosts);
@@ -151,7 +163,32 @@ export const CommunityPostsSection: React.FC<CommunityPostsSectionProps> = ({ us
         </div>
       </div>
 
-      {errorNotice && (
+      {quotaExhausted && (
+        <div className="mb-6 p-4 bg-amber-50 border border-amber-300 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-amber-900 text-xs">
+          <div className="flex items-start sm:items-center gap-2.5">
+            <ShieldAlert className="w-5 h-5 text-amber-600 shrink-0 mt-0.5 sm:mt-0" />
+            <div>
+              <p className="font-bold">
+                Limite de leituras diárias do Firebase atingido no plano gratuito Spark.
+              </p>
+              <p className="text-amber-700 text-[11px] mt-0.5">
+                Os posts e produtos continuam funcionando normalmente através do armazenamento local de alta velocidade. O limite do Firebase reseta automaticamente amanhã ou você pode atualizar para o plano Blaze sem limites.
+              </p>
+            </div>
+          </div>
+          <a
+            href={FIRESTORE_UPGRADE_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="bg-amber-600 hover:bg-amber-700 text-white font-black text-xs px-3.5 py-2 rounded-xl shrink-0 inline-flex items-center gap-1.5 shadow-sm transition-colors"
+          >
+            <span>Firebase Console</span>
+            <ExternalLink className="w-3.5 h-3.5" />
+          </a>
+        </div>
+      )}
+
+      {errorNotice && !quotaExhausted && (
         <div className="mb-6 p-4 bg-amber-50 border border-amber-200 text-amber-900 rounded-2xl text-xs font-semibold flex items-center gap-2">
           <ShieldAlert className="w-4 h-4 text-amber-600 shrink-0" />
           <span>{errorNotice}</span>
@@ -198,13 +235,13 @@ export const CommunityPostsSection: React.FC<CommunityPostsSectionProps> = ({ us
               {/* Media banner if present */}
               {post.imageUrl && (
                 <div className="relative w-full h-48 bg-slate-100 overflow-hidden border-b border-slate-100">
-                  <img
+                  <FastImage
                     src={post.imageUrl}
                     alt={post.title || 'Foto do post'}
+                    updatedAt={post.createdAt}
                     className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                    referrerPolicy="no-referrer"
                   />
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-3">
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-3 pointer-events-none">
                     <span className="text-white text-xs font-bold drop-shadow">Clique para ver o post completo</span>
                   </div>
                 </div>

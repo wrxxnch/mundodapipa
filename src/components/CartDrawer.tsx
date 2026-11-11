@@ -280,8 +280,10 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                     }`}
                   >
                     <img
+                      key={item.product.image}
                       src={item.product.image}
                       alt={item.product.name}
+                      loading="eager"
                       className="w-16 h-16 object-cover rounded-xl border border-slate-200 bg-white"
                       referrerPolicy="no-referrer"
                     />

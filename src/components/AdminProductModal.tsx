@@ -572,7 +572,7 @@ export const AdminProductModal: React.FC<AdminProductModalProps> = ({
                 <div className="flex flex-wrap gap-2 pt-1">
                   {images.map((imgUrl, idx) => (
                     <div key={idx} className="relative group w-16 h-16 rounded-xl overflow-hidden border border-slate-300 bg-white shadow-sm">
-                      <img src={imgUrl} alt={`Foto ${idx + 1}`} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                      <img key={imgUrl} src={imgUrl} alt={`Foto ${idx + 1}`} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                       <button
                         type="button"
                         onClick={() => handleRemoveImage(idx)}
