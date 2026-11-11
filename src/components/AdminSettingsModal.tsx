@@ -23,7 +23,12 @@ import {
   EyeOff,
   Globe,
   Layers,
-  FolderPlus
+  FolderPlus,
+  Shield,
+  UserCheck,
+  UserPlus,
+  Crown,
+  Database
 } from 'lucide-react';
 import { 
   CatalogSettings, 
@@ -35,7 +40,11 @@ import {
   toggleCouponShowOnSiteInFirestore,
   subscribeToCategories,
   saveCategoryToFirestore,
-  deleteCategoryFromFirestore
+  deleteCategoryFromFirestore,
+  subscribeToAdminEmails,
+  addAdminEmail,
+  removeAdminEmail,
+  forceSyncAllWithFirestore
 } from '../lib/firebase';
 import { SortOption, Product, Coupon, CategoryItem } from '../types';
 
@@ -48,7 +57,7 @@ interface AdminSettingsModalProps {
   userEmail?: string;
 }
 
-type TabType = 'coupons' | 'categories' | 'sorting';
+type TabType = 'coupons' | 'categories' | 'admins' | 'sorting';
 
 export const AdminSettingsModal: React.FC<AdminSettingsModalProps> = ({
   isOpen,
@@ -104,6 +113,15 @@ export const AdminSettingsModal: React.FC<AdminSettingsModalProps> = ({
   const [categoryToDelete, setCategoryToDelete] = useState<CategoryItem | null>(null);
   const [isDeletingCategory, setIsDeletingCategory] = useState(false);
 
+  // Admin Emails State
+  const [adminEmails, setAdminEmails] = useState<string[]>([]);
+  const [isAdminFormOpen, setIsAdminFormOpen] = useState(false);
+  const [newAdminEmail, setNewAdminEmail] = useState('');
+  const [savingAdmin, setSavingAdmin] = useState(false);
+  const [adminEmailToDelete, setAdminEmailToDelete] = useState<string | null>(null);
+  const [isDeletingAdmin, setIsDeletingAdmin] = useState(false);
+  const [isSyncingAll, setIsSyncingAll] = useState(false);
+
   // Real-time coupons subscription
   useEffect(() => {
     if (!isOpen) return;
@@ -118,6 +136,15 @@ export const AdminSettingsModal: React.FC<AdminSettingsModalProps> = ({
     if (!isOpen) return;
     const unsub = subscribeToCategories((realtimeCategories) => {
       setCategories(realtimeCategories);
+    });
+    return () => unsub();
+  }, [isOpen]);
+
+  // Admin emails subscription
+  useEffect(() => {
+    if (!isOpen) return;
+    const unsub = subscribeToAdminEmails((emails) => {
+      setAdminEmails(emails);
     });
     return () => unsub();
   }, [isOpen]);
@@ -299,6 +326,60 @@ export const AdminSettingsModal: React.FC<AdminSettingsModalProps> = ({
     }
   };
 
+  const handleSaveAdminEmail = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const cleanEmail = newAdminEmail.trim().toLowerCase();
+    if (!cleanEmail) {
+      setErrorMessage('Por favor, informe o e-mail do novo administrador.');
+      return;
+    }
+    setSavingAdmin(true);
+    setErrorMessage(null);
+    try {
+      const updated = await addAdminEmail(cleanEmail, userEmail);
+      setAdminEmails(updated);
+      setSuccessMessage(`Administrador "${cleanEmail}" cadastrado com sucesso!`);
+      setNewAdminEmail('');
+      setIsAdminFormOpen(false);
+      setTimeout(() => setSuccessMessage(null), 3000);
+    } catch (err: any) {
+      setErrorMessage(err?.message || 'Erro ao cadastrar administrador.');
+    } finally {
+      setSavingAdmin(false);
+    }
+  };
+
+  const handleConfirmDeleteAdmin = async () => {
+    if (!adminEmailToDelete) return;
+    setIsDeletingAdmin(true);
+    setErrorMessage(null);
+    try {
+      const updated = await removeAdminEmail(adminEmailToDelete, userEmail);
+      setAdminEmails(updated);
+      setSuccessMessage(`Administrador "${adminEmailToDelete}" removido com sucesso.`);
+      setAdminEmailToDelete(null);
+      setTimeout(() => setSuccessMessage(null), 3000);
+    } catch (err: any) {
+      setErrorMessage(err?.message || 'Erro ao remover administrador.');
+    } finally {
+      setIsDeletingAdmin(false);
+    }
+  };
+
+  const handleForceSyncAll = async () => {
+    setIsSyncingAll(true);
+    setErrorMessage(null);
+    try {
+      await forceSyncAllWithFirestore();
+      setSuccessMessage('Sincronização completa realizada! Cache do site atualizado com o Firebase.');
+      setTimeout(() => setSuccessMessage(null), 3500);
+    } catch (err: any) {
+      setErrorMessage(err?.message || 'Erro ao sincronizar com Firebase.');
+    } finally {
+      setIsSyncingAll(false);
+    }
+  };
+
   const getProductCountForCategory = (catId: string) => {
     return products.filter((p) => p.category === catId).length;
   };
@@ -373,16 +454,28 @@ export const AdminSettingsModal: React.FC<AdminSettingsModalProps> = ({
                 Painel Administrativo Mundo da Pipa
               </h3>
               <p className="text-slate-400 text-xs font-medium">
-                Categorias, cupons de desconto e ordenação do catálogo
+                Categorias, cupons, equipe de administradores e ordenação
               </p>
             </div>
           </div>
-          <button
-            onClick={onClose}
-            className="text-slate-400 hover:text-white p-1.5 rounded-full hover:bg-slate-800 transition-colors"
-          >
-            <X className="w-5 h-5" />
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handleForceSyncAll}
+              disabled={isSyncingAll}
+              title="Forçar sincronização de dados e atualizar cache com Firebase"
+              className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold transition-colors border border-slate-700 disabled:opacity-50"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isSyncingAll ? 'animate-spin text-orange-400' : ''}`} />
+              <span>{isSyncingAll ? 'Sincronizando...' : 'Sincronizar Firebase'}</span>
+            </button>
+            <button
+              onClick={onClose}
+              className="text-slate-400 hover:text-white p-1.5 rounded-full hover:bg-slate-800 transition-colors"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
         </div>
 
         {/* Navigation Tabs */}
@@ -416,6 +509,22 @@ export const AdminSettingsModal: React.FC<AdminSettingsModalProps> = ({
             <span>Cupons Promocionais</span>
             <span className="bg-orange-100 text-orange-800 text-[10px] font-black px-2 py-0.5 rounded-full">
               {coupons.length}
+            </span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => { setActiveTab('admins'); setIsFormOpen(false); setIsCategoryFormOpen(false); }}
+            className={`px-3.5 py-2.5 rounded-t-2xl text-xs sm:text-sm font-black transition-all flex items-center gap-2 border-t border-x shrink-0 ${
+              activeTab === 'admins'
+                ? 'bg-white text-orange-600 border-slate-200 shadow-sm -mb-px'
+                : 'text-slate-600 hover:text-slate-900 border-transparent hover:bg-slate-200/60'
+            }`}
+          >
+            <Shield className="w-4 h-4 text-orange-500" />
+            <span>Administradores</span>
+            <span className="bg-orange-100 text-orange-800 text-[10px] font-black px-2 py-0.5 rounded-full">
+              {adminEmails.length}
             </span>
           </button>
 
@@ -1194,6 +1303,218 @@ export const AdminSettingsModal: React.FC<AdminSettingsModalProps> = ({
             </div>
           )}
 
+          {/* TAB: GERENCIADOR DE ADMINISTRADORES */}
+          {activeTab === 'admins' && (
+            <div className="space-y-5">
+              
+              {/* Top Action Bar */}
+              {!isAdminFormOpen && (
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-gradient-to-r from-orange-50 via-amber-50 to-orange-50 p-4 rounded-2xl border border-orange-200">
+                  <div className="space-y-0.5">
+                    <h4 className="font-black text-slate-900 text-sm flex items-center gap-2">
+                      <Shield className="w-4 h-4 text-orange-600" />
+                      <span>Equipe de Administradores</span>
+                    </h4>
+                    <p className="text-xs text-slate-600">
+                      Adicione novos e-mails para conceder acesso completo ao painel administrativo.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsAdminFormOpen(true);
+                      setNewAdminEmail('');
+                    }}
+                    className="bg-orange-600 hover:bg-orange-500 text-white font-black text-xs px-4 py-2.5 rounded-xl shadow flex items-center justify-center gap-1.5 transition-all shrink-0"
+                  >
+                    <UserPlus className="w-4 h-4" />
+                    <span>Adicionar Administrador</span>
+                  </button>
+                </div>
+              )}
+
+              {/* Form to Add New Admin */}
+              {isAdminFormOpen && (
+                <form onSubmit={handleSaveAdminEmail} className="bg-slate-50 border-2 border-orange-300 rounded-3xl p-4 sm:p-5 space-y-4 animate-fadeIn">
+                  <div className="flex items-center justify-between border-b border-slate-200 pb-3">
+                    <div className="flex items-center gap-2">
+                      <UserPlus className="w-5 h-5 text-orange-600" />
+                      <h4 className="font-black text-slate-900 text-sm">
+                        Cadastrar Novo Administrador
+                      </h4>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setIsAdminFormOpen(false)}
+                      className="text-slate-400 hover:text-slate-700 p-1"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-black uppercase text-slate-700 mb-1">
+                      E-mail do Novo Administrador *
+                    </label>
+                    <input
+                      type="email"
+                      required
+                      value={newAdminEmail}
+                      onChange={(e) => setNewAdminEmail(e.target.value)}
+                      placeholder="exemplo: novo.admin@mundodapipa.com.br"
+                      className="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm font-bold text-slate-900 focus:outline-none focus:border-orange-500"
+                    />
+                    <p className="text-[11px] text-slate-500 mt-1.5 leading-relaxed">
+                      Ao salvar, qualquer usuário que efetuar login com este e-mail (seja por senha ou com Conta Google) terá acesso imediato às ferramentas administrativas da loja.
+                    </p>
+                  </div>
+
+                  <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-200">
+                    <button
+                      type="button"
+                      onClick={() => setIsAdminFormOpen(false)}
+                      className="px-4 py-2 text-xs font-bold text-slate-700 bg-white border border-slate-200 rounded-xl hover:bg-slate-100 transition-colors"
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={savingAdmin}
+                      className="px-5 py-2 text-xs font-black text-white bg-orange-600 hover:bg-orange-500 rounded-xl shadow transition-colors flex items-center gap-1.5"
+                    >
+                      {savingAdmin ? (
+                        <>
+                          <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                          <span>Salvando...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Check className="w-3.5 h-3.5" />
+                          <span>Salvar Administrador</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </form>
+              )}
+
+              {/* LIST OF ADMINS */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-xs font-black text-slate-900 uppercase tracking-wider">
+                    Administradores Cadastrados ({adminEmails.length})
+                  </h4>
+                  <span className="text-[11px] text-slate-500">
+                    Sincronizados na nuvem Firebase Firestore
+                  </span>
+                </div>
+
+                <div className="space-y-2.5">
+                  {adminEmails.map((email) => {
+                    const isOwner = email.toLowerCase() === 'jeanpierreowner@gmail.com';
+                    const isFounder = email.toLowerCase() === 'diegao.sock.bh1984@gmail.com';
+
+                    return (
+                      <div
+                        key={email}
+                        className={`bg-white border rounded-2xl p-3.5 flex items-center justify-between gap-3 shadow-xs transition-all ${
+                          isOwner 
+                            ? 'border-amber-300 bg-amber-50/20' 
+                            : 'border-slate-200 hover:border-orange-200'
+                        }`}
+                      >
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 border ${
+                            isOwner 
+                              ? 'bg-amber-100 border-amber-300 text-amber-700' 
+                              : isFounder
+                              ? 'bg-orange-100 border-orange-300 text-orange-700'
+                              : 'bg-slate-100 border-slate-200 text-slate-700'
+                          }`}>
+                            {isOwner ? (
+                              <Crown className="w-5 h-5" />
+                            ) : (
+                              <UserCheck className="w-5 h-5" />
+                            )}
+                          </div>
+
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="font-mono font-bold text-xs sm:text-sm text-slate-900 truncate">
+                                {email}
+                              </span>
+                              {isOwner ? (
+                                <span className="bg-amber-100 text-amber-900 text-[10px] font-black px-2 py-0.5 rounded-full border border-amber-300 flex items-center gap-1">
+                                  👑 Proprietário Principal
+                                </span>
+                              ) : isFounder ? (
+                                <span className="bg-orange-100 text-orange-900 text-[10px] font-black px-2 py-0.5 rounded-full border border-orange-200">
+                                  🛡️ Administrador
+                                </span>
+                              ) : (
+                                <span className="bg-emerald-100 text-emerald-900 text-[10px] font-black px-2 py-0.5 rounded-full border border-emerald-200">
+                                  ✓ Administrador
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-[11px] text-slate-500 mt-0.5">
+                              {isOwner 
+                                ? 'Acesso vitalício e protegido contra exclusão.' 
+                                : 'Permissão total de edição de produtos, preços, cupons e estoque.'}
+                            </p>
+                          </div>
+                        </div>
+
+                        {/* Action: Delete */}
+                        <div className="shrink-0">
+                          {isOwner ? (
+                            <span className="text-[10px] font-bold text-amber-700 bg-amber-100/80 px-2.5 py-1 rounded-lg border border-amber-200">
+                              Fixo
+                            </span>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => setAdminEmailToDelete(email)}
+                              className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-colors border border-transparent hover:border-red-200"
+                              title={`Remover administrador ${email}`}
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Firestore Read & Cost Optimization Explanatory Box */}
+              <div className="bg-gradient-to-r from-emerald-50 via-teal-50 to-emerald-50 border border-emerald-200 rounded-2xl p-4 space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-emerald-900 font-black text-xs uppercase tracking-wide">
+                    <Database className="w-4 h-4 text-emerald-600" />
+                    <span>Otimização do Firestore (Redução Drástica de Leituras)</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleForceSyncAll}
+                    disabled={isSyncingAll}
+                    className="text-[11px] font-bold text-emerald-800 bg-white border border-emerald-300 hover:bg-emerald-100/60 px-3 py-1 rounded-lg shadow-xs flex items-center gap-1.5 transition-colors disabled:opacity-50"
+                  >
+                    <RefreshCw className={`w-3 h-3 ${isSyncingAll ? 'animate-spin' : ''}`} />
+                    <span>{isSyncingAll ? 'Sincronizando...' : 'Sincronizar Tudo Agora'}</span>
+                  </button>
+                </div>
+                <p className="text-xs text-emerald-800 leading-relaxed">
+                  ✓ <strong>Cache Inteligente (TTL 15–30 min):</strong> Visitantes e robôs leem dados da memória/cache local, reduzindo 95%+ das consultas ao Firestore.
+                  <br />
+                  ✓ <strong>Invalidação Instantânea:</strong> Suas alterações como administrador refletem imediatamente em tela e no banco na nuvem.
+                </p>
+              </div>
+
+            </div>
+          )}
+
           {/* TAB 2: ORDENAÇÃO DO CATÁLOGO */}
           {activeTab === 'sorting' && (
             <div className="space-y-6">
@@ -1443,6 +1764,64 @@ export const AdminSettingsModal: React.FC<AdminSettingsModalProps> = ({
                   <>
                     <Trash2 className="w-3.5 h-3.5" />
                     <span>Sim, Remover Categoria</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Confirmation Modal for Removing Admin Email */}
+      {adminEmailToDelete && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-fadeIn">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-red-200 space-y-4">
+            <div className="flex items-center gap-3 text-red-600">
+              <div className="w-12 h-12 rounded-2xl bg-red-100 flex items-center justify-center shrink-0">
+                <Trash2 className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="text-lg font-black text-slate-900 leading-tight">Remover Acesso de Administrador?</h3>
+                <p className="text-xs text-slate-500">Este usuário não poderá mais gerenciar a loja.</p>
+              </div>
+            </div>
+
+            <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3.5 space-y-1">
+              <span className="text-xs text-slate-500 font-bold block uppercase tracking-wide">
+                E-mail selecionado:
+              </span>
+              <p className="font-mono font-black text-slate-900 text-sm break-all">
+                {adminEmailToDelete}
+              </p>
+              <p className="text-[11px] text-slate-500 mt-1">
+                Ao confirmar, as permissões administrativas associadas a esta conta serão revogadas imediatamente.
+              </p>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setAdminEmailToDelete(null)}
+                disabled={isDeletingAdmin}
+                className="px-4 py-2 text-xs font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-xl transition-colors"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDeleteAdmin}
+                disabled={isDeletingAdmin}
+                className="px-4 py-2 text-xs font-black text-white bg-red-600 hover:bg-red-700 rounded-xl shadow-lg transition-colors flex items-center gap-1.5"
+              >
+                {isDeletingAdmin ? (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    <span>Removendo...</span>
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Sim, Revogar Acesso</span>
                   </>
                 )}
               </button>

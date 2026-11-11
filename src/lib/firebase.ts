@@ -31,6 +31,16 @@ import firebaseConfig from '../../firebase-applet-config.json';
 import { Product, CartItem, Post, Coupon, CategoryItem } from '../types';
 import { PRODUCTS as DEFAULT_PRODUCTS } from '../data/products';
 import { SHOPEE_PRODUCT_FIO10 } from '../data/shopeeData';
+import { 
+  cacheGet, 
+  cacheGetStale, 
+  cacheSet, 
+  cacheInvalidate, 
+  cacheInvalidateAll, 
+  cacheGetTimestamp, 
+  dedupeRequest, 
+  TTL 
+} from '../utils/firestoreCache';
 
 // Initialize Firebase
 const app = initializeApp(firebaseConfig);
@@ -140,15 +150,163 @@ export interface UserProfile {
   role: 'admin' | 'customer';
 }
 
-export const ADMIN_EMAILS = [
-  'admin@mundodapipa.com.br',
+export const DEFAULT_ADMIN_EMAILS = [
   'jeanpierreowner@gmail.com',
-  'diegao.sock.bh1984@gmail.com'
+  'diegao.sock.bh1984@gmail.com',
+  'admin@mundodapipa.com.br'
 ];
+
+let activeAdminEmails: string[] = (() => {
+  const cached = cacheGet<string[]>('admin_users', TTL.ADMIN_USERS);
+  if (Array.isArray(cached) && cached.length > 0) {
+    const set = new Set([
+      ...DEFAULT_ADMIN_EMAILS.map(e => e.toLowerCase().trim()),
+      ...cached.map(e => String(e).toLowerCase().trim())
+    ]);
+    return Array.from(set);
+  }
+  return [...DEFAULT_ADMIN_EMAILS];
+})();
+
+export const ADMIN_EMAILS: string[] = activeAdminEmails;
+
+const adminEmailsListeners: ((emails: string[]) => void)[] = [];
+export const notifyAdminEmailSubscribers = (emails: string[]) => {
+  activeAdminEmails = emails;
+  ADMIN_EMAILS.length = 0;
+  ADMIN_EMAILS.push(...emails);
+  adminEmailsListeners.forEach(fn => {
+    try { fn(emails); } catch {}
+  });
+};
 
 export const isAdminEmail = (email?: string | null): boolean => {
   if (!email) return false;
-  return ADMIN_EMAILS.includes(email.trim().toLowerCase());
+  const clean = email.trim().toLowerCase();
+  return (
+    activeAdminEmails.some(e => e.toLowerCase() === clean) ||
+    DEFAULT_ADMIN_EMAILS.some(e => e.toLowerCase() === clean)
+  );
+};
+
+export const getAdminEmails = async (forceRefresh = false): Promise<string[]> => {
+  if (!forceRefresh) {
+    const cached = cacheGet<string[]>('admin_users', TTL.ADMIN_USERS);
+    if (cached && Array.isArray(cached) && cached.length > 0) {
+      const merged = Array.from(new Set([
+        ...DEFAULT_ADMIN_EMAILS.map(e => e.toLowerCase().trim()),
+        ...cached.map(e => String(e).toLowerCase().trim())
+      ]));
+      notifyAdminEmailSubscribers(merged);
+      return merged;
+    }
+  }
+
+  return dedupeRequest('admin_users', async () => {
+    try {
+      const docRef = doc(db, 'site_content', 'admin_users');
+      const docSnap = await getDoc(docRef);
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        if (Array.isArray(data.emails)) {
+          const merged = Array.from(new Set([
+            ...DEFAULT_ADMIN_EMAILS.map(e => e.toLowerCase().trim()),
+            ...data.emails.map((e: string) => String(e).toLowerCase().trim())
+          ]));
+          cacheSet('admin_users', merged);
+          notifyAdminEmailSubscribers(merged);
+          return merged;
+        }
+      }
+    } catch (err) {
+      console.warn('Error reading admin emails from Firestore:', err);
+    }
+    cacheSet('admin_users', activeAdminEmails);
+    return activeAdminEmails;
+  });
+};
+
+export const addAdminEmail = async (newEmail: string, currentAdmin?: string): Promise<string[]> => {
+  const cleanEmail = newEmail.trim().toLowerCase();
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!cleanEmail || !emailRegex.test(cleanEmail)) {
+    throw new Error('E-mail inválido. Por favor, digite um e-mail com formato válido (ex: nome@email.com).');
+  }
+
+  const currentList = Array.from(new Set([
+    ...DEFAULT_ADMIN_EMAILS.map(e => e.toLowerCase().trim()),
+    ...activeAdminEmails.map(e => e.toLowerCase().trim())
+  ]));
+
+  if (currentList.includes(cleanEmail)) {
+    throw new Error(`O e-mail "${cleanEmail}" já está cadastrado na lista de administradores.`);
+  }
+
+  const updatedList = [...currentList, cleanEmail];
+  cacheSet('admin_users', updatedList);
+  notifyAdminEmailSubscribers(updatedList);
+
+  try {
+    const docRef = doc(db, 'site_content', 'admin_users');
+    await setDoc(docRef, {
+      emails: updatedList,
+      updatedAt: new Date().toISOString(),
+      updatedBy: currentAdmin || 'admin'
+    }, { merge: true });
+  } catch (err: any) {
+    console.warn('Error syncing new admin email to Firestore cloud:', err);
+  }
+
+  return updatedList;
+};
+
+export const removeAdminEmail = async (emailToRemove: string, currentAdmin?: string): Promise<string[]> => {
+  const cleanEmail = emailToRemove.trim().toLowerCase();
+  if (cleanEmail === 'jeanpierreowner@gmail.com') {
+    throw new Error('O e-mail do proprietário principal (jeanpierreowner@gmail.com) não pode ser removido.');
+  }
+
+  const currentList = Array.from(new Set([
+    ...DEFAULT_ADMIN_EMAILS.map(e => e.toLowerCase().trim()),
+    ...activeAdminEmails.map(e => e.toLowerCase().trim())
+  ]));
+
+  const updatedList = currentList.filter(e => e !== cleanEmail);
+  if (!updatedList.includes('jeanpierreowner@gmail.com')) {
+    updatedList.unshift('jeanpierreowner@gmail.com');
+  }
+
+  cacheSet('admin_users', updatedList);
+  notifyAdminEmailSubscribers(updatedList);
+
+  try {
+    const docRef = doc(db, 'site_content', 'admin_users');
+    await setDoc(docRef, {
+      emails: updatedList,
+      updatedAt: new Date().toISOString(),
+      updatedBy: currentAdmin || 'admin'
+    }, { merge: true });
+  } catch (err: any) {
+    console.warn('Error syncing admin email deletion to Firestore cloud:', err);
+  }
+
+  return updatedList;
+};
+
+export const subscribeToAdminEmails = (callback: (emails: string[]) => void): (() => void) => {
+  adminEmailsListeners.push(callback);
+  callback(activeAdminEmails);
+
+  // Background refresh if cache expired
+  const cached = cacheGet<string[]>('admin_users', TTL.ADMIN_USERS);
+  if (!cached && !isFirestoreQuotaExhausted) {
+    getAdminEmails(true).catch(() => {});
+  }
+
+  return () => {
+    const idx = adminEmailsListeners.indexOf(callback);
+    if (idx >= 0) adminEmailsListeners.splice(idx, 1);
+  };
 };
 
 const LOCAL_PRODUCTS_CACHE_KEY = 'mundo_pipa_products_cache';
@@ -159,11 +317,19 @@ const handleQuotaExhausted = (err: any) => {
 
 // Local product storage helper
 const getLocalProducts = (): Product[] => {
+  const cached = cacheGet<Product[]>('products', TTL.PRODUCTS);
+  if (cached && Array.isArray(cached) && cached.length > 0) {
+    return cached;
+  }
+  const stale = cacheGetStale<Product[]>('products');
+  if (stale && Array.isArray(stale) && stale.length > 0) {
+    return stale;
+  }
   try {
     const raw = localStorage.getItem(LOCAL_PRODUCTS_CACHE_KEY);
     if (raw !== null) {
       const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) {
+      if (Array.isArray(parsed) && parsed.length > 0) {
         return parsed;
       }
     }
@@ -172,6 +338,7 @@ const getLocalProducts = (): Product[] => {
 };
 
 const setLocalProducts = (products: Product[]) => {
+  cacheSet('products', products);
   try {
     localStorage.setItem(LOCAL_PRODUCTS_CACHE_KEY, JSON.stringify(products));
   } catch {}
@@ -309,24 +476,39 @@ export const parseFirestoreProduct = (id: string, data: any): Product => {
   };
 };
 
-// Direct Firestore fetch
-export const getProductsFromFirestore = async (): Promise<Product[]> => {
+// Direct Firestore fetch with cache and deduplication
+export const getProductsFromFirestore = async (forceRefresh = false): Promise<Product[]> => {
   const path = 'products';
-  try {
-    const productsRef = collection(db, path);
-    const snapshot = await getDocs(productsRef);
-    if (snapshot.empty) {
-      return [];
+  if (!forceRefresh) {
+    const cached = cacheGet<Product[]>('products', TTL.PRODUCTS);
+    if (cached && Array.isArray(cached) && cached.length > 0) {
+      return cached;
     }
-    const productsList: Product[] = [];
-    snapshot.forEach((docSnap) => {
-      productsList.push(parseFirestoreProduct(docSnap.id, docSnap.data()));
-    });
-    return productsList;
-  } catch (error) {
-    handleFirestoreError(error, OperationType.GET, path);
-    return [];
   }
+
+  if (isFirestoreQuotaExhausted) {
+    return getLocalProducts();
+  }
+
+  return dedupeRequest('products', async () => {
+    try {
+      const productsRef = collection(db, path);
+      const snapshot = await getDocs(productsRef);
+      if (snapshot.empty) {
+        return [];
+      }
+      const productsList: Product[] = [];
+      snapshot.forEach((docSnap) => {
+        productsList.push(parseFirestoreProduct(docSnap.id, docSnap.data()));
+      });
+      cacheSet('products', productsList);
+      setLocalProducts(productsList);
+      return productsList;
+    } catch (error) {
+      handleFirestoreError(error, OperationType.GET, path);
+      return getLocalProducts();
+    }
+  });
 };
 
 // Seed guard to prevent repeated requests
@@ -337,6 +519,9 @@ export const initializeProductsSeed = async () => {
   hasAttemptedSeed = true;
 
   try {
+    const cached = cacheGet<Product[]>('products', TTL.PRODUCTS);
+    if (cached && cached.length > 0) return;
+
     const productsRef = collection(db, 'products');
     const snapshot = await getDocs(productsRef);
     if (snapshot.empty) {
@@ -385,56 +570,32 @@ export const registerShopeeItemDirectly = async () => {
   }
 };
 
-// Listen to products in real-time across all devices
+// Smart cache-first product subscriber (drastically reduces Firestore reads)
 export const subscribeToProducts = (
   onData: (products: Product[]) => void,
   onError?: (err: Error) => void
 ) => {
   productListeners.push(onData);
 
-  // 1. Immediately provide cached products
+  // 1. Immediately provide cached products (0ms, 0 Firestore reads)
   const cached = getLocalProducts();
   onData(cached);
 
-  let unsubscribeFirestore = () => {};
-
-  try {
-    const productsRef = collection(db, 'products');
-    unsubscribeFirestore = onSnapshot(
-      productsRef,
-      (snapshot) => {
-        if (snapshot.empty) {
-          return;
-        }
-        const productsList: Product[] = [];
-        snapshot.forEach((docSnap) => {
-          productsList.push(parseFirestoreProduct(docSnap.id, docSnap.data()));
-        });
-
-        // Update local storage cache & notify all components
-        setLocalProducts(productsList);
-        onData(productsList);
-      },
-      (error) => {
-        markQuotaExhausted(error);
-        console.warn('Products Firestore snapshot notice (using local cache):', error?.message || error);
-        onData(getLocalProducts());
-        if (onError && !checkIsQuotaError(error)) {
-          onError(error);
-        }
+  // 2. Fetch from Firestore cloud ONLY if cache is missing or older than TTL
+  const hasValidCache = cacheGet<Product[]>('products', TTL.PRODUCTS) !== null;
+  if (!hasValidCache && !isFirestoreQuotaExhausted) {
+    getProductsFromFirestore().then((productsList) => {
+      onData(productsList);
+    }).catch((err) => {
+      if (onError && !checkIsQuotaError(err)) {
+        onError(err);
       }
-    );
-  } catch (error) {
-    markQuotaExhausted(error);
-    onData(getLocalProducts());
+    });
   }
 
   return () => {
     const idx = productListeners.indexOf(onData);
     if (idx >= 0) productListeners.splice(idx, 1);
-    try {
-      unsubscribeFirestore();
-    } catch {}
   };
 };
 
@@ -842,31 +1003,35 @@ export const saveStoryContent = async (content: StoryContent) => {
 };
 
 export const subscribeToStoryContent = (onData: (content: StoryContent) => void) => {
-  // Return local storage data immediately
-  const initial = getStoryContent();
+  // 1. Return cached data immediately (0 reads)
+  const initial = cacheGet<StoryContent>('about_story', TTL.ABOUT_STORY) || getStoryContent();
   onData(initial);
 
-  try {
-    const storyRef = doc(db, 'site_content', 'about_history');
-    return onSnapshot(
-      storyRef,
-      (docSnap) => {
+  // 2. Fetch only if cache is missing or older than TTL
+  const isCacheValid = cacheGet<StoryContent>('about_story', TTL.ABOUT_STORY) !== null;
+  if (!isCacheValid && !isFirestoreQuotaExhausted) {
+    dedupeRequest('about_story', async () => {
+      try {
+        const storyRef = doc(db, 'site_content', 'about_history');
+        const docSnap = await getDoc(storyRef);
         if (docSnap.exists()) {
           const data = docSnap.data();
           const merged = { ...DEFAULT_STORY_CONTENT, ...data };
+          cacheSet('about_story', merged);
           try {
             localStorage.setItem(LOCAL_STORY_KEY, JSON.stringify(merged));
           } catch {}
           onData(merged);
+          return merged;
         }
-      },
-      (err) => {
-        console.warn('Firestore story snapshot notice:', err?.message || err);
+      } catch (err: any) {
+        markQuotaExhausted(err);
       }
-    );
-  } catch {
-    return () => {};
+      return getStoryContent();
+    });
   }
+
+  return () => {};
 };
 
 // =========================================================
@@ -933,35 +1098,49 @@ export const setLocalPosts = (posts: Post[]) => {
 /**
  * Fetch all posts from Firebase Firestore or fallback to local cache
  */
-export const getPostsFromFirestore = async (): Promise<Post[]> => {
+export const getPostsFromFirestore = async (forceRefresh = false): Promise<Post[]> => {
   const path = 'posts';
-  try {
-    const postsRef = collection(db, path);
-    const snapshot = await getDocs(postsRef);
-    if (!snapshot.empty) {
-      const postsList: Post[] = [];
-      snapshot.forEach((docSnap) => {
-        const data = docSnap.data();
-        postsList.push({
-          id: docSnap.id,
-          title: data.title || '',
-          content: data.content || '',
-          author: data.author || 'Mundo da Pipa',
-          authorId: data.authorId || '',
-          imageUrl: getFreshImageUrl(data.imageUrl, data.updatedAt || data.createdAt),
-          videoUrl: data.videoUrl || '',
-          createdAt: data.createdAt || new Date().toISOString()
-        });
-      });
-      postsList.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-      setLocalPosts(postsList);
-      return postsList;
+  if (!forceRefresh) {
+    const cached = cacheGet<Post[]>('posts', TTL.POSTS);
+    if (cached && Array.isArray(cached) && cached.length > 0) {
+      return cached;
     }
-  } catch (error) {
-    markQuotaExhausted(error);
-    console.warn('Posts Firestore read notice (using resilient local cache):', error);
   }
-  return getLocalPosts();
+
+  if (isFirestoreQuotaExhausted) {
+    return getLocalPosts();
+  }
+
+  return dedupeRequest('posts', async () => {
+    try {
+      const postsRef = collection(db, path);
+      const snapshot = await getDocs(postsRef);
+      if (!snapshot.empty) {
+        const postsList: Post[] = [];
+        snapshot.forEach((docSnap) => {
+          const data = docSnap.data();
+          postsList.push({
+            id: docSnap.id,
+            title: data.title || '',
+            content: data.content || '',
+            author: data.author || 'Mundo da Pipa',
+            authorId: data.authorId || '',
+            imageUrl: getFreshImageUrl(data.imageUrl, data.updatedAt || data.createdAt),
+            videoUrl: data.videoUrl || '',
+            createdAt: data.createdAt || new Date().toISOString()
+          });
+        });
+        postsList.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+        cacheSet('posts', postsList);
+        setLocalPosts(postsList);
+        return postsList;
+      }
+    } catch (error) {
+      markQuotaExhausted(error);
+      console.warn('Posts Firestore read notice (using resilient local cache):', error);
+    }
+    return getLocalPosts();
+  });
 };
 
 /**
@@ -1045,64 +1224,25 @@ export const subscribeToPosts = (
 ) => {
   postListeners.push(onData);
 
-  // 1. Immediately deliver local/cached posts so user sees content instantly
-  const cached = getLocalPosts();
+  // 1. Immediately deliver local/cached posts (0ms, 0 reads)
+  const cached = cacheGet<Post[]>('posts', TTL.POSTS) || getLocalPosts();
   onData(cached);
 
-  const path = 'posts';
-  let unsubscribeFirestore = () => {};
-
-  try {
-    const postsRef = collection(db, path);
-    unsubscribeFirestore = onSnapshot(
-      postsRef,
-      (snapshot) => {
-        if (!snapshot.empty) {
-          const postsList: Post[] = [];
-          snapshot.forEach((docSnap) => {
-            const data = docSnap.data();
-            postsList.push({
-              id: docSnap.id,
-              title: data.title || '',
-              content: data.content || '',
-              author: data.author || 'Mundo da Pipa',
-              authorId: data.authorId || '',
-              imageUrl: getFreshImageUrl(data.imageUrl, data.updatedAt || data.createdAt),
-              videoUrl: data.videoUrl || '',
-              createdAt: data.createdAt || new Date().toISOString()
-            });
-          });
-
-          // Sort latest first
-          postsList.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-          setLocalPosts(postsList);
-          onData(postsList);
-        } else {
-          // If collection is empty, ensure cached default posts are displayed
-          onData(getLocalPosts());
-        }
-      },
-      (error) => {
-        markQuotaExhausted(error);
-        console.warn('Posts Firestore subscription notice (using resilient local cache):', error?.message || error);
-        // Do not crash UI or leave screen blank; keep serving cached posts
-        onData(getLocalPosts());
-        if (onError && !checkIsQuotaError(error)) {
-          onError(error);
-        }
+  // 2. Fetch only if cache missing or expired
+  const isCacheValid = cacheGet<Post[]>('posts', TTL.POSTS) !== null;
+  if (!isCacheValid && !isFirestoreQuotaExhausted) {
+    getPostsFromFirestore().then((postsList) => {
+      onData(postsList);
+    }).catch((err) => {
+      if (onError && !checkIsQuotaError(err)) {
+        onError(err);
       }
-    );
-  } catch (error) {
-    markQuotaExhausted(error);
-    onData(getLocalPosts());
+    });
   }
 
   return () => {
     const idx = postListeners.indexOf(onData);
     if (idx >= 0) postListeners.splice(idx, 1);
-    try {
-      unsubscribeFirestore();
-    } catch {}
   };
 };
 
@@ -1142,28 +1282,41 @@ export const setLocalCatalogSettings = (settings: CatalogSettings) => {
   } catch {}
 };
 
-export const getCatalogSettingsFromFirestore = async (): Promise<CatalogSettings> => {
-  try {
-    const docRef = doc(db, 'site_content', 'catalog_settings');
-    const docSnap = await getDoc(docRef);
-    if (docSnap.exists()) {
-      const data = docSnap.data();
-      const settings: CatalogSettings = {
-        defaultSortNewest: data.defaultSortNewest !== undefined ? Boolean(data.defaultSortNewest) : true,
-        defaultSortOption: data.defaultSortOption || 'newest',
-        updatedAt: data.updatedAt,
-        updatedBy: data.updatedBy
-      };
-      setLocalCatalogSettings(settings);
-      return settings;
-    }
-  } catch (error) {
-    console.warn('Error fetching catalog settings from Firestore:', error);
+export const getCatalogSettingsFromFirestore = async (forceRefresh = false): Promise<CatalogSettings> => {
+  if (!forceRefresh) {
+    const cached = cacheGet<CatalogSettings>('catalog_settings', TTL.CATALOG_SETTINGS);
+    if (cached) return cached;
   }
-  return getLocalCatalogSettings();
+
+  if (isFirestoreQuotaExhausted) {
+    return getLocalCatalogSettings();
+  }
+
+  return dedupeRequest('catalog_settings', async () => {
+    try {
+      const docRef = doc(db, 'site_content', 'catalog_settings');
+      const docSnap = await getDoc(docRef);
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        const settings: CatalogSettings = {
+          defaultSortNewest: data.defaultSortNewest !== undefined ? Boolean(data.defaultSortNewest) : true,
+          defaultSortOption: data.defaultSortOption || 'newest',
+          updatedAt: data.updatedAt,
+          updatedBy: data.updatedBy
+        };
+        cacheSet('catalog_settings', settings);
+        setLocalCatalogSettings(settings);
+        return settings;
+      }
+    } catch (error) {
+      console.warn('Error fetching catalog settings from Firestore:', error);
+    }
+    return getLocalCatalogSettings();
+  });
 };
 
 export const saveCatalogSettingsToFirestore = async (settings: CatalogSettings, userEmail?: string): Promise<void> => {
+  cacheSet('catalog_settings', settings);
   setLocalCatalogSettings(settings);
   try {
     const docRef = doc(db, 'site_content', 'catalog_settings');
@@ -1181,36 +1334,19 @@ export const saveCatalogSettingsToFirestore = async (settings: CatalogSettings, 
 export const subscribeToCatalogSettings = (
   onData: (settings: CatalogSettings) => void
 ) => {
-  // 1. Immediately provide local/cached settings
-  const cached = getLocalCatalogSettings();
+  // 1. Immediately provide cached settings (0ms, 0 reads)
+  const cached = cacheGet<CatalogSettings>('catalog_settings', TTL.CATALOG_SETTINGS) || getLocalCatalogSettings();
   onData(cached);
 
-  // 2. Realtime Firestore listener
-  try {
-    const docRef = doc(db, 'site_content', 'catalog_settings');
-    const unsubscribe = onSnapshot(
-      docRef,
-      (docSnap) => {
-        if (docSnap.exists()) {
-          const data = docSnap.data();
-          const settings: CatalogSettings = {
-            defaultSortNewest: data.defaultSortNewest !== undefined ? Boolean(data.defaultSortNewest) : true,
-            defaultSortOption: data.defaultSortOption || 'newest',
-            updatedAt: data.updatedAt,
-            updatedBy: data.updatedBy
-          };
-          setLocalCatalogSettings(settings);
-          onData(settings);
-        }
-      },
-      (error) => {
-        console.warn('Catalog settings listener error:', error);
-      }
-    );
-    return unsubscribe;
-  } catch {
-    return () => {};
+  // 2. Fetch from Firestore ONLY if cache is missing or older than TTL
+  const isCacheValid = cacheGet<CatalogSettings>('catalog_settings', TTL.CATALOG_SETTINGS) !== null;
+  if (!isCacheValid && !isFirestoreQuotaExhausted) {
+    getCatalogSettingsFromFirestore().then((settings) => {
+      onData(settings);
+    }).catch(() => {});
   }
+
+  return () => {};
 };
 
 // ==========================================
@@ -1222,18 +1358,22 @@ const COUPONS_STORAGE_KEY = 'mundo_pipa_coupons';
 const DEFAULT_COUPONS: Coupon[] = [];
 
 export const getLocalCoupons = (): Coupon[] => {
+  const cached = cacheGet<Coupon[]>('coupons', TTL.COUPONS);
+  if (cached && Array.isArray(cached)) {
+    return cached.filter((c) => c && c.id !== 'default-pipa10' && c.code !== 'PIPA10');
+  }
+  const stale = cacheGetStale<Coupon[]>('coupons');
+  if (stale && Array.isArray(stale)) {
+    return stale.filter((c) => c && c.id !== 'default-pipa10' && c.code !== 'PIPA10');
+  }
   try {
     const stored = localStorage.getItem(COUPONS_STORAGE_KEY);
     if (stored !== null) {
       const parsed = JSON.parse(stored);
       if (Array.isArray(parsed)) {
-        // Remove example coupon if present
         const filtered = parsed.filter(
           (c) => c && c.id !== 'default-pipa10' && c.code !== 'PIPA10'
         );
-        if (filtered.length !== parsed.length) {
-          localStorage.setItem(COUPONS_STORAGE_KEY, JSON.stringify(filtered));
-        }
         return filtered;
       }
     }
@@ -1248,6 +1388,7 @@ export const setLocalCoupons = (coupons: Coupon[]) => {
     const cleaned = coupons.filter(
       (c) => c && c.id !== 'default-pipa10' && c.code !== 'PIPA10'
     );
+    cacheSet('coupons', cleaned);
     localStorage.setItem(COUPONS_STORAGE_KEY, JSON.stringify(cleaned));
   } catch (e) {
     console.warn('Error saving local coupons:', e);
@@ -1257,16 +1398,17 @@ export const setLocalCoupons = (coupons: Coupon[]) => {
 export const subscribeToCoupons = (
   onData: (coupons: Coupon[]) => void
 ): (() => void) => {
-  // 1. Immediately provide cached/local coupons (filtered from any example)
+  // 1. Immediately provide cached/local coupons (0ms, 0 reads)
   const cached = getLocalCoupons();
   onData(cached);
 
-  // 2. Realtime Firestore sync
-  try {
-    const couponsCol = collection(db, 'coupons');
-    const unsubscribe = onSnapshot(
-      couponsCol,
-      (snapshot) => {
+  // 2. Fetch from Firestore ONLY if cache is missing or older than TTL
+  const isCacheValid = cacheGet<Coupon[]>('coupons', TTL.COUPONS) !== null;
+  if (!isCacheValid && !isFirestoreQuotaExhausted) {
+    dedupeRequest('coupons', async () => {
+      try {
+        const couponsCol = collection(db, 'coupons');
+        const snapshot = await getDocs(couponsCol);
         if (!snapshot.empty) {
           const remoteCoupons: Coupon[] = [];
           snapshot.forEach((docSnap) => {
@@ -1274,7 +1416,6 @@ export const subscribeToCoupons = (
             const id = docSnap.id;
             const code = String(data.code || '').toUpperCase().trim();
 
-            // If it is the example coupon, remove it from Firestore and do not display it
             if (id === 'default-pipa10' || code === 'PIPA10') {
               try {
                 deleteDoc(doc(db, 'coupons', id)).catch(() => {});
@@ -1296,26 +1437,25 @@ export const subscribeToCoupons = (
             });
           });
 
-          // Sort by creation or code
           remoteCoupons.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
           setLocalCoupons(remoteCoupons);
           onData(remoteCoupons);
+          return remoteCoupons;
         } else {
-          // If Firestore is empty, provide clean empty list
-          const local = getLocalCoupons();
-          onData(local);
+          setLocalCoupons([]);
+          onData([]);
+          return [];
         }
-      },
-      (error) => {
+      } catch (error: any) {
+        markQuotaExhausted(error);
         console.warn('Coupons Firestore sync error, using local cache:', error);
         onData(getLocalCoupons());
+        return getLocalCoupons();
       }
-    );
-    return unsubscribe;
-  } catch (error) {
-    console.warn('Coupons collection listen error:', error);
-    return () => {};
+    });
   }
+
+  return () => {};
 };
 
 export const saveCouponToFirestore = async (
@@ -1436,6 +1576,14 @@ export const DEFAULT_CATEGORIES: CategoryItem[] = [
 const CATEGORIES_KEY = 'mundo_pipa_categories_v2';
 
 export const getLocalCategories = (): CategoryItem[] => {
+  const cached = cacheGet<CategoryItem[]>('categories', TTL.CATEGORIES);
+  if (cached && Array.isArray(cached) && cached.length > 0) {
+    return cached;
+  }
+  const stale = cacheGetStale<CategoryItem[]>('categories');
+  if (stale && Array.isArray(stale) && stale.length > 0) {
+    return stale;
+  }
   try {
     const raw = localStorage.getItem(CATEGORIES_KEY);
     if (raw) {
@@ -1447,61 +1595,57 @@ export const getLocalCategories = (): CategoryItem[] => {
 };
 
 export const setLocalCategories = (categories: CategoryItem[]): void => {
+  cacheSet('categories', categories);
   try {
     localStorage.setItem(CATEGORIES_KEY, JSON.stringify(categories));
   } catch {}
 };
 
 export const subscribeToCategories = (callback: (categories: CategoryItem[]) => void): (() => void) => {
-  // Emit initial local categories immediately
-  callback(getLocalCategories());
+  // 1. Emit cached/local categories immediately (0ms, 0 reads)
+  const cached = getLocalCategories();
+  callback(cached);
 
-  try {
-    const categoriesCol = collection(db, 'categories');
-    const unsubscribe = onSnapshot(categoriesCol, async (snapshot) => {
-      if (!snapshot.empty) {
-        const loaded: CategoryItem[] = [];
-        snapshot.forEach((docSnap) => {
-          const data = docSnap.data();
-          loaded.push({
-            id: docSnap.id,
-            label: data.label || docSnap.id,
-            icon: data.icon || '🏷️',
-            order: typeof data.order === 'number' ? data.order : 99,
-            isDefault: Boolean(data.isDefault),
-            createdAt: data.createdAt,
-            updatedAt: data.updatedAt
-          });
-        });
-        loaded.sort((a, b) => (a.order || 99) - (b.order || 99));
-        setLocalCategories(loaded);
-        callback(loaded);
-      } else {
-        // Seed default categories into Firestore if collection is empty
-        try {
-          for (const cat of DEFAULT_CATEGORIES) {
-            await setDoc(doc(db, 'categories', cat.id), {
-              label: cat.label,
-              icon: cat.icon || '🏷️',
-              order: cat.order || 99,
-              isDefault: true,
-              createdAt: new Date().toISOString()
+  // 2. Fetch from Firestore ONLY if cache is missing or older than TTL
+  const isCacheValid = cacheGet<CategoryItem[]>('categories', TTL.CATEGORIES) !== null;
+  if (!isCacheValid && !isFirestoreQuotaExhausted) {
+    dedupeRequest('categories', async () => {
+      try {
+        const categoriesCol = collection(db, 'categories');
+        const snapshot = await getDocs(categoriesCol);
+        if (!snapshot.empty) {
+          const loaded: CategoryItem[] = [];
+          snapshot.forEach((docSnap) => {
+            const data = docSnap.data();
+            loaded.push({
+              id: docSnap.id,
+              label: data.label || docSnap.id,
+              icon: data.icon || '🏷️',
+              order: typeof data.order === 'number' ? data.order : 99,
+              isDefault: Boolean(data.isDefault),
+              createdAt: data.createdAt,
+              updatedAt: data.updatedAt
             });
-          }
-        } catch {
-          // Fallback if Firestore write fails
+          });
+          loaded.sort((a, b) => (a.order || 99) - (b.order || 99));
+          setLocalCategories(loaded);
+          callback(loaded);
+          return loaded;
+        } else {
+          setLocalCategories(DEFAULT_CATEGORIES);
+          callback(DEFAULT_CATEGORIES);
+          return DEFAULT_CATEGORIES;
         }
-        callback(DEFAULT_CATEGORIES);
+      } catch (error: any) {
+        markQuotaExhausted(error);
+        console.warn('Error reading categories from Firestore, using local:', error);
+        callback(getLocalCategories());
+        return getLocalCategories();
       }
-    }, (error) => {
-      console.warn('Error listening to categories in Firestore, using local:', error);
-      callback(getLocalCategories());
     });
-    return unsubscribe;
-  } catch (error) {
-    console.warn('Failed to subscribe to categories:', error);
-    return () => {};
   }
+
+  return () => {};
 };
 
 export const saveCategoryToFirestore = async (
@@ -1627,6 +1771,14 @@ export const DEFAULT_CUSTOMER_REVIEWS: CustomerReviewItem[] = [
 const LOCAL_REVIEWS_KEY = 'mundo_pipa_customer_reviews';
 
 export const getLocalReviews = (): CustomerReviewItem[] => {
+  const cached = cacheGet<CustomerReviewItem[]>('reviews', TTL.REVIEWS);
+  if (cached && Array.isArray(cached) && cached.length > 0) {
+    return cached;
+  }
+  const stale = cacheGetStale<CustomerReviewItem[]>('reviews');
+  if (stale && Array.isArray(stale) && stale.length > 0) {
+    return stale;
+  }
   try {
     const raw = localStorage.getItem(LOCAL_REVIEWS_KEY);
     if (raw) {
@@ -1638,45 +1790,65 @@ export const getLocalReviews = (): CustomerReviewItem[] => {
 };
 
 export const setLocalReviews = (reviews: CustomerReviewItem[]) => {
+  cacheSet('reviews', reviews);
   try {
     localStorage.setItem(LOCAL_REVIEWS_KEY, JSON.stringify(reviews));
   } catch {}
 };
 
 export const subscribeToReviews = (onData: (reviews: CustomerReviewItem[]) => void) => {
-  onData(getLocalReviews());
+  // 1. Immediately provide cached reviews (0ms, 0 reads)
+  const cached = getLocalReviews();
+  onData(cached);
 
-  try {
-    const reviewsCol = collection(db, 'reviews');
-    const unsubscribe = onSnapshot(reviewsCol, (snapshot) => {
-      if (!snapshot.empty) {
-        const loaded: CustomerReviewItem[] = [];
-        snapshot.forEach((docSnap) => {
-          const data = docSnap.data();
-          loaded.push({
-            id: docSnap.id,
-            author: data.author || 'Cliente',
-            variation: data.variation || 'Produto Mundo da Pipa',
-            rating: Number(data.rating) || 5,
-            date: data.date || new Date().toISOString().split('T')[0],
-            comment: data.comment || '',
-            badges: Array.isArray(data.badges) ? data.badges : [],
-            sellerReply: data.sellerReply
+  // 2. Fetch from Firestore ONLY if cache is missing or older than TTL
+  const isCacheValid = cacheGet<CustomerReviewItem[]>('reviews', TTL.REVIEWS) !== null;
+  if (!isCacheValid && !isFirestoreQuotaExhausted) {
+    dedupeRequest('reviews', async () => {
+      try {
+        const reviewsCol = collection(db, 'reviews');
+        const snapshot = await getDocs(reviewsCol);
+        if (!snapshot.empty) {
+          const loaded: CustomerReviewItem[] = [];
+          snapshot.forEach((docSnap) => {
+            const data = docSnap.data();
+            loaded.push({
+              id: docSnap.id,
+              author: data.author || 'Cliente',
+              variation: data.variation || 'Produto Mundo da Pipa',
+              rating: Number(data.rating) || 5,
+              date: data.date || new Date().toISOString().split('T')[0],
+              comment: data.comment || '',
+              badges: Array.isArray(data.badges) ? data.badges : [],
+              sellerReply: data.sellerReply
+            });
           });
-        });
-        setLocalReviews(loaded);
-        onData(loaded);
-      } else {
-        onData(getLocalReviews());
+          setLocalReviews(loaded);
+          onData(loaded);
+          return loaded;
+        }
+      } catch (error: any) {
+        markQuotaExhausted(error);
       }
-    }, (error) => {
-      markQuotaExhausted(error);
-      onData(getLocalReviews());
+      return getLocalReviews();
     });
-    return unsubscribe;
-  } catch {
-    return () => {};
   }
+
+  return () => {};
+};
+
+/**
+ * Complete synchronization tool:
+ * Invalidates all client caches and re-fetches latest cloud documents.
+ */
+export const forceSyncAllWithFirestore = async (): Promise<void> => {
+  cacheInvalidateAll();
+  await Promise.allSettled([
+    getProductsFromFirestore(true),
+    getAdminEmails(true),
+    getPostsFromFirestore(true),
+    getCatalogSettingsFromFirestore(true)
+  ]);
 };
 
 

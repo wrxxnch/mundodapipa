@@ -111,6 +111,22 @@
         "updatedAt": { "type": "string" }
       },
       "required": ["id", "label"]
+    },
+    "reviews": {
+      "title": "Reviews",
+      "description": "Store authentic customer product ratings and reviews",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "author": { "type": "string" },
+        "variation": { "type": "string" },
+        "rating": { "type": "number" },
+        "date": { "type": "string" },
+        "comment": { "type": "string" },
+        "badges": { "type": "array" },
+        "sellerReply": { "type": "string" }
+      },
+      "required": ["author", "rating", "comment"]
     }
   }
 }
