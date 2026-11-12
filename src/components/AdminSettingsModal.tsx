@@ -28,7 +28,13 @@ import {
   UserCheck,
   UserPlus,
   Crown,
-  Database
+  Database,
+  Download,
+  FileCode,
+  Terminal,
+  Code2,
+  CheckCircle2,
+  FileText
 } from 'lucide-react';
 import { 
   CatalogSettings, 
@@ -44,8 +50,16 @@ import {
   subscribeToAdminEmails,
   addAdminEmail,
   removeAdminEmail,
-  forceSyncAllWithFirestore
+  forceSyncAllWithFirestore,
+  getCompleteDatabaseBackup,
+  FIREBASE_PROJECT_INFO
 } from '../lib/firebase';
+import { 
+  downloadJsonFile, 
+  downloadTextFile, 
+  generateSqlScript, 
+  generateFirestoreQueries 
+} from '../utils/databaseExport';
 import { SortOption, Product, Coupon, CategoryItem } from '../types';
 
 interface AdminSettingsModalProps {
@@ -57,7 +71,7 @@ interface AdminSettingsModalProps {
   userEmail?: string;
 }
 
-type TabType = 'coupons' | 'categories' | 'admins' | 'sorting';
+type TabType = 'coupons' | 'categories' | 'admins' | 'sorting' | 'export';
 
 export const AdminSettingsModal: React.FC<AdminSettingsModalProps> = ({
   isOpen,
@@ -122,6 +136,19 @@ export const AdminSettingsModal: React.FC<AdminSettingsModalProps> = ({
   const [isDeletingAdmin, setIsDeletingAdmin] = useState(false);
   const [isSyncingAll, setIsSyncingAll] = useState(false);
 
+  // Export and Query Editor State
+  const [isExportingJson, setIsExportingJson] = useState(false);
+  const [isExportingSql, setIsExportingSql] = useState(false);
+  const [copiedJson, setCopiedJson] = useState(false);
+  const [copiedSql, setCopiedSql] = useState(false);
+  const [copiedQueryIndex, setCopiedQueryIndex] = useState<number | null>(null);
+  const [copiedCli, setCopiedCli] = useState(false);
+  const [copiedNodejs, setCopiedNodejs] = useState(false);
+  const [querySubTab, setQuerySubTab] = useState<'firestore' | 'cli' | 'nodejs'>('firestore');
+  const [showDataPreview, setShowDataPreview] = useState(false);
+  const [previewFormat, setPreviewFormat] = useState<'json' | 'sql'>('json');
+  const [previewData, setPreviewData] = useState<string>('');
+
   // Real-time coupons subscription
   useEffect(() => {
     if (!isOpen) return;
@@ -170,7 +197,12 @@ export const AdminSettingsModal: React.FC<AdminSettingsModalProps> = ({
     });
   }, [products, productSearch, categoryFilter]);
 
-  if (!isOpen) return null;
+  const firestoreQueries = useMemo(() => {
+    return generateFirestoreQueries(
+      FIREBASE_PROJECT_INFO.databaseId,
+      FIREBASE_PROJECT_INFO.projectId
+    );
+  }, []);
 
   const handleOpenNewCoupon = () => {
     setEditingCouponId(null);
@@ -380,6 +412,99 @@ export const AdminSettingsModal: React.FC<AdminSettingsModalProps> = ({
     }
   };
 
+  const handleDownloadJsonBackup = async () => {
+    setIsExportingJson(true);
+    setErrorMessage(null);
+    try {
+      const bundle = await getCompleteDatabaseBackup(userEmail);
+      const dateStr = new Date().toISOString().split('T')[0];
+      downloadJsonFile(bundle, `mundodapipa-backup-${dateStr}.json`);
+      setSuccessMessage(`Backup JSON gerado com sucesso! (${bundle.metadata.totalRecords} registros exportados)`);
+      setTimeout(() => setSuccessMessage(null), 3500);
+    } catch (err: any) {
+      setErrorMessage(err?.message || 'Erro ao gerar backup em JSON.');
+    } finally {
+      setIsExportingJson(false);
+    }
+  };
+
+  const handleCopyJsonBackup = async () => {
+    try {
+      const bundle = await getCompleteDatabaseBackup(userEmail);
+      await navigator.clipboard.writeText(JSON.stringify(bundle, null, 2));
+      setCopiedJson(true);
+      setTimeout(() => setCopiedJson(false), 2000);
+    } catch (err: any) {
+      setErrorMessage(err?.message || 'Erro ao copiar JSON.');
+    }
+  };
+
+  const handleDownloadSqlBackup = async () => {
+    setIsExportingSql(true);
+    setErrorMessage(null);
+    try {
+      const bundle = await getCompleteDatabaseBackup(userEmail);
+      const sql = generateSqlScript(bundle as any);
+      const dateStr = new Date().toISOString().split('T')[0];
+      downloadTextFile(sql, `mundodapipa-database-${dateStr}.sql`, 'text/plain;charset=utf-8;');
+      setSuccessMessage(`Script SQL / .db gerado com sucesso com tabelas e comandos INSERT!`);
+      setTimeout(() => setSuccessMessage(null), 3500);
+    } catch (err: any) {
+      setErrorMessage(err?.message || 'Erro ao exportar script SQL.');
+    } finally {
+      setIsExportingSql(false);
+    }
+  };
+
+  const handleCopySqlBackup = async () => {
+    try {
+      const bundle = await getCompleteDatabaseBackup(userEmail);
+      const sql = generateSqlScript(bundle as any);
+      await navigator.clipboard.writeText(sql);
+      setCopiedSql(true);
+      setTimeout(() => setCopiedSql(false), 2000);
+    } catch (err: any) {
+      setErrorMessage(err?.message || 'Erro ao copiar script SQL.');
+    }
+  };
+
+  const handleCopyQuerySnippet = (snippet: string, idx: number) => {
+    navigator.clipboard.writeText(snippet);
+    setCopiedQueryIndex(idx);
+    setTimeout(() => setCopiedQueryIndex(null), 2000);
+  };
+
+  const handleCopyCliCommand = () => {
+    navigator.clipboard.writeText(firestoreQueries.gcloudExport);
+    setCopiedCli(true);
+    setTimeout(() => setCopiedCli(false), 2000);
+  };
+
+  const handleCopyNodejsSnippet = () => {
+    navigator.clipboard.writeText(firestoreQueries.nodejsSnippet);
+    setCopiedNodejs(true);
+    setTimeout(() => setCopiedNodejs(false), 2000);
+  };
+
+  const handleTogglePreview = async (format: 'json' | 'sql') => {
+    if (showDataPreview && previewFormat === format) {
+      setShowDataPreview(false);
+      return;
+    }
+    setPreviewFormat(format);
+    setShowDataPreview(true);
+    try {
+      const bundle = await getCompleteDatabaseBackup(userEmail);
+      if (format === 'json') {
+        setPreviewData(JSON.stringify(bundle, null, 2));
+      } else {
+        setPreviewData(generateSqlScript(bundle as any));
+      }
+    } catch {
+      setPreviewData('-- Erro ao carregar pré-visualização dos dados.');
+    }
+  };
+
   const getProductCountForCategory = (catId: string) => {
     return products.filter((p) => p.category === catId).length;
   };
@@ -439,6 +564,8 @@ export const AdminSettingsModal: React.FC<AdminSettingsModalProps> = ({
     }
   };
 
+  if (!isOpen) return null;
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/80 backdrop-blur-sm animate-fadeIn">
       <div className="bg-white rounded-3xl max-w-2xl w-full max-h-[92vh] flex flex-col overflow-hidden shadow-2xl border border-slate-200">
@@ -459,6 +586,19 @@ export const AdminSettingsModal: React.FC<AdminSettingsModalProps> = ({
             </div>
           </div>
           <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => { setActiveTab('export'); setIsFormOpen(false); setIsCategoryFormOpen(false); }}
+              title="Exportar banco completo (.db ou .json) ou comandos para query editor"
+              className={`hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-colors border ${
+                activeTab === 'export'
+                  ? 'bg-emerald-600 text-white border-emerald-500 shadow-sm'
+                  : 'bg-emerald-950/40 hover:bg-emerald-900/60 text-emerald-300 border-emerald-800/80'
+              }`}
+            >
+              <Download className="w-3.5 h-3.5 text-emerald-400" />
+              <span>Exportar (.db / .json)</span>
+            </button>
             <button
               type="button"
               onClick={handleForceSyncAll}
@@ -539,6 +679,22 @@ export const AdminSettingsModal: React.FC<AdminSettingsModalProps> = ({
           >
             <ArrowDownWideNarrow className="w-4 h-4 text-slate-700" />
             <span>Ordenação do Catálogo</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => { setActiveTab('export'); setIsFormOpen(false); setIsCategoryFormOpen(false); }}
+            className={`px-3.5 py-2.5 rounded-t-2xl text-xs sm:text-sm font-black transition-all flex items-center gap-2 border-t border-x shrink-0 ${
+              activeTab === 'export'
+                ? 'bg-white text-emerald-600 border-slate-200 shadow-sm -mb-px'
+                : 'text-slate-600 hover:text-slate-900 border-transparent hover:bg-slate-200/60'
+            }`}
+          >
+            <Download className="w-4 h-4 text-emerald-500" />
+            <span>Exportar & Query Editor</span>
+            <span className="bg-emerald-100 text-emerald-800 text-[10px] font-black px-2 py-0.5 rounded-full">
+              .db / .json
+            </span>
           </button>
         </div>
 
@@ -1622,6 +1778,406 @@ export const AdminSettingsModal: React.FC<AdminSettingsModalProps> = ({
                     </>
                   )}
                 </button>
+              </div>
+
+            </div>
+          )}
+
+          {/* TAB 5: EXPORT & QUERY EDITOR (.DB / .JSON) */}
+          {activeTab === 'export' && (
+            <div className="space-y-6">
+
+              {/* Overview & Database Details Header */}
+              <div className="p-4 sm:p-5 bg-gradient-to-br from-emerald-50 via-teal-50/50 to-slate-50 border border-emerald-200/90 rounded-2xl space-y-3 shadow-sm">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-emerald-600 text-white flex items-center justify-center shrink-0 shadow-md">
+                      <Database className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h4 className="text-sm sm:text-base font-black text-slate-900 leading-tight">
+                        Exportação de Dados & Firestore Query Editor
+                      </h4>
+                      <p className="text-xs text-slate-600 font-medium">
+                        Baixe cópias instantâneas em <strong>.JSON</strong> ou <strong>.SQL (.db)</strong> e execute comandos no Query Editor
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1.5 self-start sm:self-center">
+                    <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-100 text-emerald-800 text-[11px] font-black">
+                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                      Banco Ativo
+                    </span>
+                  </div>
+                </div>
+
+                {/* Database metadata badges */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-2 border-t border-emerald-200/60">
+                  <div className="bg-white/80 backdrop-blur-sm p-2 rounded-xl border border-emerald-100 text-center">
+                    <span className="block text-[10px] uppercase font-bold text-slate-500">Produtos</span>
+                    <span className="text-sm font-black text-slate-900">{products.length} itens</span>
+                  </div>
+                  <div className="bg-white/80 backdrop-blur-sm p-2 rounded-xl border border-emerald-100 text-center">
+                    <span className="block text-[10px] uppercase font-bold text-slate-500">Categorias</span>
+                    <span className="text-sm font-black text-slate-900">{categories.length} ativas</span>
+                  </div>
+                  <div className="bg-white/80 backdrop-blur-sm p-2 rounded-xl border border-emerald-100 text-center">
+                    <span className="block text-[10px] uppercase font-bold text-slate-500">Cupons</span>
+                    <span className="text-sm font-black text-slate-900">{coupons.length} cupons</span>
+                  </div>
+                  <div className="bg-white/80 backdrop-blur-sm p-2 rounded-xl border border-emerald-100 text-center">
+                    <span className="block text-[10px] uppercase font-bold text-slate-500">Admins</span>
+                    <span className="text-sm font-black text-slate-900">{adminEmails.length} contas</span>
+                  </div>
+                </div>
+
+                <div className="text-[11px] font-mono text-slate-500 bg-emerald-100/60 p-2 rounded-xl flex items-center justify-between overflow-x-auto gap-2">
+                  <span className="truncate">Database ID: <strong>{FIREBASE_PROJECT_INFO.databaseId}</strong></span>
+                  <span className="truncate text-slate-400">Projeto: {FIREBASE_PROJECT_INFO.projectId}</span>
+                </div>
+              </div>
+
+              {/* Main Export Action Cards */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+
+                {/* Card 1: JSON Export */}
+                <div className="p-4 sm:p-5 bg-white rounded-2xl border-2 border-emerald-200/90 shadow-sm hover:shadow-md transition-shadow flex flex-col justify-between space-y-4">
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <div className="w-8 h-8 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center font-black">
+                          <FileCode className="w-4 h-4" />
+                        </div>
+                        <h5 className="font-black text-slate-900 text-sm">Backup Completo .JSON</h5>
+                      </div>
+                      <span className="text-[10px] font-mono font-bold bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded-md border border-emerald-200">
+                        .json
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-600 leading-relaxed">
+                      Exporta todo o catálogo, categorias, cupons, postagens, avaliações e configurações num arquivo JSON estruturado.
+                    </p>
+                  </div>
+
+                  <div className="space-y-2 pt-2 border-t border-slate-100">
+                    <button
+                      type="button"
+                      onClick={handleDownloadJsonBackup}
+                      disabled={isExportingJson}
+                      className="w-full py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs transition-colors flex items-center justify-center gap-2 shadow-sm disabled:opacity-50"
+                    >
+                      {isExportingJson ? (
+                        <>
+                          <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                          <span>Gerando Backup...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Download className="w-4 h-4" />
+                          <span>Baixar Arquivo .JSON</span>
+                        </>
+                      )}
+                    </button>
+
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={handleCopyJsonBackup}
+                        className="py-2 px-3 rounded-xl border border-slate-300 hover:bg-slate-50 text-slate-700 font-bold text-xs transition-colors flex items-center justify-center gap-1.5"
+                      >
+                        {copiedJson ? (
+                          <>
+                            <Check className="w-3.5 h-3.5 text-emerald-600" />
+                            <span className="text-emerald-700">Copiado!</span>
+                          </>
+                        ) : (
+                          <>
+                            <Copy className="w-3.5 h-3.5 text-slate-500" />
+                            <span>Copiar JSON</span>
+                          </>
+                        )}
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => handleTogglePreview('json')}
+                        className={`py-2 px-3 rounded-xl border font-bold text-xs transition-colors flex items-center justify-center gap-1.5 ${
+                          showDataPreview && previewFormat === 'json'
+                            ? 'bg-emerald-50 text-emerald-700 border-emerald-300'
+                            : 'border-slate-300 hover:bg-slate-50 text-slate-700'
+                        }`}
+                      >
+                        <Eye className="w-3.5 h-3.5" />
+                        <span>{showDataPreview && previewFormat === 'json' ? 'Ocultar' : 'Prévia'}</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Card 2: SQL / .db Export */}
+                <div className="p-4 sm:p-5 bg-white rounded-2xl border-2 border-indigo-200/90 shadow-sm hover:shadow-md transition-shadow flex flex-col justify-between space-y-4">
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <div className="w-8 h-8 rounded-lg bg-indigo-100 text-indigo-700 flex items-center justify-center font-black">
+                          <Database className="w-4 h-4" />
+                        </div>
+                        <h5 className="font-black text-slate-900 text-sm">Banco de Dados SQL / .db</h5>
+                      </div>
+                      <span className="text-[10px] font-mono font-bold bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded-md border border-indigo-200">
+                        .sql / .db
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-600 leading-relaxed">
+                      Gera script SQL com <code>CREATE TABLE</code> e comandos <code>INSERT OR REPLACE</code> pronto para SQLite (.db), PostgreSQL, MySQL, TablePlus ou DBeaver.
+                    </p>
+                  </div>
+
+                  <div className="space-y-2 pt-2 border-t border-slate-100">
+                    <button
+                      type="button"
+                      onClick={handleDownloadSqlBackup}
+                      disabled={isExportingSql}
+                      className="w-full py-2.5 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-black text-xs transition-colors flex items-center justify-center gap-2 shadow-sm disabled:opacity-50"
+                    >
+                      {isExportingSql ? (
+                        <>
+                          <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                          <span>Exportando SQL...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Download className="w-4 h-4" />
+                          <span>Baixar Script SQL (.sql / .db)</span>
+                        </>
+                      )}
+                    </button>
+
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={handleCopySqlBackup}
+                        className="py-2 px-3 rounded-xl border border-slate-300 hover:bg-slate-50 text-slate-700 font-bold text-xs transition-colors flex items-center justify-center gap-1.5"
+                      >
+                        {copiedSql ? (
+                          <>
+                            <Check className="w-3.5 h-3.5 text-indigo-600" />
+                            <span className="text-indigo-700">Copiado!</span>
+                          </>
+                        ) : (
+                          <>
+                            <Copy className="w-3.5 h-3.5 text-slate-500" />
+                            <span>Copiar SQL</span>
+                          </>
+                        )}
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => handleTogglePreview('sql')}
+                        className={`py-2 px-3 rounded-xl border font-bold text-xs transition-colors flex items-center justify-center gap-1.5 ${
+                          showDataPreview && previewFormat === 'sql'
+                            ? 'bg-indigo-50 text-indigo-700 border-indigo-300'
+                            : 'border-slate-300 hover:bg-slate-50 text-slate-700'
+                        }`}
+                      >
+                        <Eye className="w-3.5 h-3.5" />
+                        <span>{showDataPreview && previewFormat === 'sql' ? 'Ocultar' : 'Prévia'}</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+              </div>
+
+              {/* Data Preview Accordion Box */}
+              {showDataPreview && (
+                <div className="p-4 bg-slate-950 rounded-2xl border border-slate-800 space-y-2 animate-fadeIn">
+                  <div className="flex items-center justify-between text-xs text-slate-400 pb-2 border-b border-slate-800">
+                    <span className="font-bold flex items-center gap-2 text-slate-200">
+                      <Code2 className="w-4 h-4 text-emerald-400" />
+                      Pré-visualização: {previewFormat.toUpperCase()} ({previewData.split('\n').length} linhas)
+                    </span>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          navigator.clipboard.writeText(previewData);
+                          if (previewFormat === 'json') {
+                            setCopiedJson(true);
+                            setTimeout(() => setCopiedJson(false), 2000);
+                          } else {
+                            setCopiedSql(true);
+                            setTimeout(() => setCopiedSql(false), 2000);
+                          }
+                        }}
+                        className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-[11px] font-bold flex items-center gap-1 transition-colors"
+                      >
+                        <Copy className="w-3 h-3" />
+                        <span>Copiar Tudo</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setShowDataPreview(false)}
+                        className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                  <pre className="text-[11px] font-mono text-emerald-400 bg-slate-900/80 p-3 rounded-xl overflow-x-auto max-h-56 leading-relaxed select-all">
+                    {previewData}
+                  </pre>
+                </div>
+              )}
+
+              {/* Section 2: Query Editor & Comandos */}
+              <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 sm:p-5 space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-lg bg-orange-100 text-orange-600 flex items-center justify-center font-black">
+                      <Terminal className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <h5 className="font-black text-slate-900 text-sm">Comandos para Query Editor & Terminal</h5>
+                      <p className="text-xs text-slate-500">Snippets prontos para o console do Firebase, Google Cloud CLI ou Node.js</p>
+                    </div>
+                  </div>
+
+                  {/* Subtabs for query types */}
+                  <div className="flex items-center gap-1 bg-slate-200/80 p-1 rounded-xl self-start sm:self-auto">
+                    <button
+                      type="button"
+                      onClick={() => setQuerySubTab('firestore')}
+                      className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${
+                        querySubTab === 'firestore'
+                          ? 'bg-white text-orange-600 shadow-sm'
+                          : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      Queries Firestore
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setQuerySubTab('cli')}
+                      className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${
+                        querySubTab === 'cli'
+                          ? 'bg-white text-orange-600 shadow-sm'
+                          : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      gcloud CLI
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setQuerySubTab('nodejs')}
+                      className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${
+                        querySubTab === 'nodejs'
+                          ? 'bg-white text-orange-600 shadow-sm'
+                          : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      Node.js Script
+                    </button>
+                  </div>
+                </div>
+
+                {/* Subtab: Firestore Console Queries */}
+                {querySubTab === 'firestore' && (
+                  <div className="space-y-3 pt-1">
+                    {firestoreQueries.firestoreConsoleQueries.map((q, idx) => (
+                      <div key={idx} className="bg-white rounded-xl border border-slate-200 p-3.5 space-y-2">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <span className="font-black text-xs text-slate-800 block">{q.title}</span>
+                            <span className="text-[11px] text-slate-500">{q.description}</span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleCopyQuerySnippet(q.snippet, idx)}
+                            className="px-2.5 py-1 rounded-lg border border-slate-200 hover:bg-slate-50 text-xs font-bold text-slate-700 flex items-center gap-1 transition-colors shrink-0"
+                          >
+                            {copiedQueryIndex === idx ? (
+                              <>
+                                <Check className="w-3 h-3 text-emerald-600" />
+                                <span className="text-emerald-700">Copiado</span>
+                              </>
+                            ) : (
+                              <>
+                                <Copy className="w-3 h-3 text-slate-500" />
+                                <span>Copiar</span>
+                              </>
+                            )}
+                          </button>
+                        </div>
+                        <pre className="text-[11px] font-mono text-slate-800 bg-slate-50 p-2.5 rounded-lg border border-slate-200/80 overflow-x-auto leading-relaxed select-all">
+                          {q.snippet}
+                        </pre>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Subtab: CLI gcloud export */}
+                {querySubTab === 'cli' && (
+                  <div className="bg-slate-950 text-slate-200 rounded-xl p-4 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-slate-400">Comando para Google Cloud SDK (gcloud):</span>
+                      <button
+                        type="button"
+                        onClick={handleCopyCliCommand}
+                        className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold flex items-center gap-1 transition-colors"
+                      >
+                        {copiedCli ? (
+                          <>
+                            <Check className="w-3 h-3 text-emerald-400" />
+                            <span className="text-emerald-300">Copiado!</span>
+                          </>
+                        ) : (
+                          <>
+                            <Copy className="w-3 h-3" />
+                            <span>Copiar Comando</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+                    <pre className="text-[11px] font-mono text-emerald-400 bg-slate-900 p-3 rounded-lg overflow-x-auto leading-relaxed select-all">
+                      {firestoreQueries.gcloudExport}
+                    </pre>
+                    <p className="text-[11px] text-slate-400 leading-relaxed">
+                      💡 Esse comando exporta todas as coleções do banco diretamente para um bucket do Google Cloud Storage em formato nativo do Firestore.
+                    </p>
+                  </div>
+                )}
+
+                {/* Subtab: Node.js Admin SDK */}
+                {querySubTab === 'nodejs' && (
+                  <div className="bg-slate-950 text-slate-200 rounded-xl p-4 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-slate-400">Script Node.js com Firebase Admin:</span>
+                      <button
+                        type="button"
+                        onClick={handleCopyNodejsSnippet}
+                        className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold flex items-center gap-1 transition-colors"
+                      >
+                        {copiedNodejs ? (
+                          <>
+                            <Check className="w-3 h-3 text-emerald-400" />
+                            <span className="text-emerald-300">Copiado!</span>
+                          </>
+                        ) : (
+                          <>
+                            <Copy className="w-3 h-3" />
+                            <span>Copiar Script</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+                    <pre className="text-[11px] font-mono text-emerald-400 bg-slate-900 p-3 rounded-lg overflow-x-auto max-h-60 leading-relaxed select-all">
+                      {firestoreQueries.nodejsSnippet}
+                    </pre>
+                  </div>
+                )}
               </div>
 
             </div>

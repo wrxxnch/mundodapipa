@@ -401,13 +401,23 @@ export function getFreshImageUrl(url?: string | null, updatedAt?: string | numbe
   const trimmed = url.trim();
   if (!trimmed) return '';
 
-  // Data URLs, Blobs and local bundled assets do not use HTTP browser caching
+  // Data URLs, Blobs and local bundled Vite assets do not use HTTP browser caching
   if (
     trimmed.startsWith('data:') || 
     trimmed.startsWith('blob:') || 
     trimmed.startsWith('/src/') || 
+    trimmed.startsWith('./') ||
+    trimmed.startsWith('assets/') ||
+    trimmed.includes('/assets/') ||
+    trimmed.includes('@fs/') ||
     (trimmed.startsWith('/') && !trimmed.startsWith('//'))
   ) {
+    return trimmed;
+  }
+
+  // Only apply version query param if updatedAt is explicitly provided.
+  // NEVER fallback to Date.now() as that invalidates image caches and unmounts elements on every React render.
+  if (!updatedAt) {
     return trimmed;
   }
 
@@ -415,7 +425,7 @@ export function getFreshImageUrl(url?: string | null, updatedAt?: string | numbe
     // Strip any old cache buster query parameter to prevent accumulation
     const cleanUrl = trimmed.replace(/([?&])(_fb|_t|t|v)=[^&]*(&|$)/g, '$1').replace(/[?&]$/, '');
     const separator = cleanUrl.includes('?') ? '&' : '?';
-    const version = updatedAt ? encodeURIComponent(String(updatedAt)) : Date.now();
+    const version = encodeURIComponent(String(updatedAt));
     return `${cleanUrl}${separator}_fb=${version}`;
   } catch {
     return trimmed;
@@ -1850,5 +1860,63 @@ export const forceSyncAllWithFirestore = async (): Promise<void> => {
     getCatalogSettingsFromFirestore(true)
   ]);
 };
+
+/**
+ * Compiles a snapshot of all collections and site configuration
+ * for backup, export (.json/.db/.sql), and query exploration.
+ */
+export const getCompleteDatabaseBackup = async (exportedBy?: string) => {
+  const [products, categories, coupons, posts, reviews, catalogSettings, storyContent, adminEmails] = await Promise.all([
+    getProductsFromFirestore(false),
+    Promise.resolve(getLocalCategories()),
+    Promise.resolve(getLocalCoupons()),
+    getPostsFromFirestore(false),
+    Promise.resolve(getLocalReviews()),
+    getCatalogSettingsFromFirestore(false),
+    Promise.resolve(getStoryContent()),
+    getAdminEmails(false)
+  ]);
+
+  const totalRecords =
+    (products?.length || 0) +
+    (categories?.length || 0) +
+    (coupons?.length || 0) +
+    (posts?.length || 0) +
+    (reviews?.length || 0) +
+    3;
+
+  return {
+    metadata: {
+      exportedAt: new Date().toISOString(),
+      version: '1.0.0',
+      appName: 'Mundo da Pipa',
+      databaseId: firebaseConfig.firestoreDatabaseId || 'ai-studio-mundodapipa-66c6efda-c9a5-44bd-992b-f034f302f161',
+      projectId: firebaseConfig.projectId || 'gen-lang-client-0927099826',
+      totalRecords,
+      exportedBy: exportedBy || 'jeanpierreowner@gmail.com'
+    },
+    collections: {
+      products: products || [],
+      categories: categories || [],
+      coupons: coupons || [],
+      posts: posts || [],
+      reviews: reviews || [],
+      site_content: {
+        about_history: storyContent,
+        catalog_settings: catalogSettings,
+        admin_users: {
+          emails: adminEmails || [],
+          updatedAt: new Date().toISOString()
+        }
+      }
+    }
+  };
+};
+
+export const FIREBASE_PROJECT_INFO = {
+  projectId: firebaseConfig.projectId || 'gen-lang-client-0927099826',
+  databaseId: firebaseConfig.firestoreDatabaseId || 'ai-studio-mundodapipa-66c6efda-c9a5-44bd-992b-f034f302f161'
+};
+
 
 
